@@ -1,0 +1,10 @@
+{
+  "label": "Heart disease (Statlog)",
+  "target": "Outcome",
+  "positive": "bad",
+  "class_names": [
+    "No disease",
+    "Disease"
+  ],
+  "balance": false
+}

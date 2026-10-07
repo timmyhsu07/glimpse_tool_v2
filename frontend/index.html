@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>GLIMPSE — a model's-eye view of where you stand</title>
+  <script>
+    // Apply the saved theme before the page renders.
+    (function () {
+      try {
+        var q = new URLSearchParams(location.search).get("theme");
+        var t = (q === "dark" || q === "light") ? q
+              : localStorage.getItem("glimpse-theme");
+        if (t !== "dark" && t !== "light")
+          t = matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+        document.documentElement.setAttribute("data-theme", t);
+      } catch (e) {}
+    })();
+  </script>
+  <link rel="stylesheet" href="/style.css">
+  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js" charset="utf-8"></script>
+</head>
+<body>
+  <header id="titlebar">
+    <h1>GLIMPSE</h1>
+  </header>
+
+  <div id="controls">
+    <label>Dataset <select id="dataset"></select></label>
+    <span id="busy" class="sub"></span>
+    <a id="account-link" href="/login.html">Sign in</a>
+    <button id="theme-toggle" class="theme-btn" type="button"
+            aria-label="Toggle light and dark mode"></button>
+  </div>
+  <section id="hero">
+    <div id="hero-maps">
+      <div class="map-head">
+        <h2 class="hero-h">The map <span class="sub">click a dot to inspect a person,
+          or any empty spot to see who would be there · drag to zoom in,
+          double-click to zoom out</span></h2>
+        <div id="map-toggle" role="group" aria-label="Which map to show">
+          <button type="button" data-view="linear">Simple</button>
+          <button type="button" data-view="mlp">Flexible</button>
+          <button type="button" data-view="both">Both</button>
+        </div>
+      </div>
+      <div id="plots">
+        <div class="plot-cell" id="cell-linear">
+          <h3>Simple model <span class="sub" id="sub-linear"></span></h3>
+          <div id="plot-linear" class="plot"></div>
+        </div>
+        <div class="plot-cell" id="cell-mlp">
+          <h3>Flexible model <span class="sub">neural net (MLP)</span></h3>
+          <div id="plot-mlp" class="plot"></div>
+        </div>
+      </div>
+      <p id="map-note" class="sub" role="status" hidden></p>
+      <ul id="legend"></ul>
+    </div>
+
+    <aside id="hero-risk">
+      <div id="verdict"><div id="verdict-headline"></div>
+        <div id="verdict-models"></div></div>
+    </aside>
+  </section>
+
+  <section id="recommend">
+    <h2>What would change the prediction</h2>
+    <p id="reco-note" class="sub"></p>
+    <div id="reco-lists"></div>
+  </section>
+
+  <section id="changes">
+    <h2>You vs. the counterfactual, feature by feature</h2>
+    <p class="sub" id="changes-note">
+      The robust counterfactual is the nearest person the model would still call
+      “<span id="changes-good">good</span>” even under the harshest equally-good
+      model. Greyed rows are held fixed (can’t realistically change);
+      ✱&nbsp;= imputed.
+    </p>
+    <div id="changes-table"></div>
+    <details id="changes-chart-details">
+      <summary>Show the size of every change (standardized units)</summary>
+      <div id="plot-delta"></div>
+      <p id="delta-caption" class="sub"></p>
+    </details>
+  </section>
+
+  <details id="you-details">
+    <summary>Enter your own data — see where you’d stand</summary>
+    <p class="sub">Real units. Leave a field blank to use a typical value
+      (marked&nbsp;✱&nbsp;imputed). Sign in to save what you enter to your
+      account; otherwise nothing you type is stored.</p>
+    <div id="saved-list" hidden>
+      <h3>Your saved values</h3>
+      <ul id="saved-items"></ul>
+    </div>
+    <form id="you-form" novalidate>
+      <div id="you-fields"></div>
+      <p id="you-buttons">
+        <button type="submit">Place me on the map</button>
+        <button type="button" id="you-save">Sign in to save</button>
+        <button type="button" id="you-typical">Start from a typical person</button>
+        <button type="button" id="you-clear">Back to dataset</button>
+      </p>
+      <p id="save-msg" class="sub" role="status" aria-live="polite"></p>
+    </form>
+    <section id="save-panel" hidden aria-labelledby="save-panel-h">
+      <h3 id="save-panel-h">Save these values</h3>
+      <p class="sub">Tick the values you want to keep. Unticked ones are not saved.</p>
+      <div id="save-choices"></div>
+      <p id="save-choice-tools">
+        <button type="button" id="save-all">Tick all</button>
+        <button type="button" id="save-none">Untick all</button>
+      </p>
+      <label id="save-name-row">Name this save
+        <input id="save-name" maxlength="60" placeholder="e.g. Before my diet"></label>
+      <p id="save-panel-buttons">
+        <button type="button" id="save-confirm">Save</button>
+        <button type="button" id="save-cancel">Cancel</button>
+      </p>
+    </section>
+  </details>
+
+  <details id="expert">
+    <summary>Show the details — exact numbers (for the curious)</summary>
+
+    <h3>About this view</h3>
+    <p class="sub"><b>Where do you stand?</b> A model sorts people into two
+      groups. This tool shows where a person lands, how sure the model really is
+      once you account for every equally-good model, and the smallest realistic
+      change that would move them — with a simple and a flexible model side by
+      side.</p>
+    <p class="sub" id="lens-note"></p>
+    <p class="sub" id="maps-sub"></p>
+    <p class="sub">Each dot is a person; ★ is the selected person; ✕ and ▪ are
+      the counterfactuals and the arrow points to the robust change. A
+      <b>simple</b> straight-line model and a <b>flexible</b> neural net are
+      shown side by side. Click any dot to inspect that person, or click an empty
+      spot to see the person the map places there.</p>
+
+    <h3>Distances to the good side</h3>
+    <table id="dist">
+      <tr><th>counterfactual</th><th>simple</th><th>flexible</th></tr>
+      <tr><td>Standard (this model only)</td><td id="d-std-lin">—</td><td id="d-std-mlp">—</td></tr>
+      <tr><td>Robust (every equally-good model)</td><td id="d-ell-lin">—</td><td id="d-ell-mlp">—</td></tr>
+    </table>
+
+    <h3>Raw metrics</h3>
+    <pre id="metrics">—</pre>
+
+    <details id="feat-details">
+      <summary>this person’s feature values</summary>
+      <div id="detail"></div>
+    </details>
+  </details>
+
+  <script src="/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,18 @@
+# NOTE: backend/engine/precomputed/*.pkl and backend/engine/datasets/ are REQUIRED at runtime.
+# Do not add *.pkl or precomputed/ here or the deploy will break.
+__pycache__/
+*.pyc
+.DS_Store
+.ipynb_checkpoints/
+
+# local environment
+.venv/
+.gstack/
+
+# Vercel link and secrets pulled by the Vercel CLI
+.vercel/
+.env*
+
+# local account database (backend/api/auth.py); never commit or deploy it
+data/
+*.db

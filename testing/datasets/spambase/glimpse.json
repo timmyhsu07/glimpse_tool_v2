@@ -1,0 +1,10 @@
+{
+  "label": "Spambase",
+  "target": "Outcome",
+  "positive": "bad",
+  "class_names": [
+    "Ham",
+    "Spam"
+  ],
+  "balance": false
+}

@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sign in — GLIMPSE</title>
+  <script>
+    // Apply the saved theme before the page renders.
+    (function () {
+      try {
+        var q = new URLSearchParams(location.search).get("theme");
+        var t = (q === "dark" || q === "light") ? q
+              : localStorage.getItem("glimpse-theme");
+        if (t !== "dark" && t !== "light")
+          t = matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+        document.documentElement.setAttribute("data-theme", t);
+      } catch (e) {}
+    })();
+  </script>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header id="titlebar">
+    <h1>GLIMPSE</h1>
+  </header>
+
+  <div id="controls">
+    <a class="back-link" href="/">&larr; Back to the map</a>
+    <button id="theme-toggle" class="theme-btn" type="button"
+            aria-label="Toggle light and dark mode"></button>
+  </div>
+
+  <main id="auth">
+    <section class="auth-card" id="auth-forms">
+      <p id="auth-reason" hidden>Sign in or create an account to save your data.
+        What you entered is kept, and you choose what to save once you’re in.</p>
+      <div class="auth-tabs" role="tablist">
+        <button type="button" role="tab" id="tab-login" aria-controls="form-login"
+                aria-selected="true">Sign in</button>
+        <button type="button" role="tab" id="tab-register" aria-controls="form-register"
+                aria-selected="false">Create account</button>
+      </div>
+
+      <form id="form-login" class="auth-form" novalidate>
+        <h2>Welcome back</h2>
+        <p class="sub">Sign in with the email you registered with.</p>
+        <label for="login-email">Email</label>
+        <input id="login-email" name="email" type="email" autocomplete="email" required>
+        <label for="login-password">Password</label>
+        <input id="login-password" name="password" type="password"
+               autocomplete="current-password" required>
+        <p class="auth-msg" role="alert" aria-live="polite"></p>
+        <button type="submit" class="auth-submit">Sign in</button>
+      </form>
+
+      <form id="form-register" class="auth-form" novalidate hidden>
+        <h2>Create an account</h2>
+        <p class="sub">Just an email and a password. No verification email is sent.</p>
+        <label for="register-email">Email</label>
+        <input id="register-email" name="email" type="email" autocomplete="email" required>
+        <label for="register-password">Password <span class="unit">at least 8
+          characters</span></label>
+        <input id="register-password" name="password" type="password"
+               autocomplete="new-password" minlength="8" required>
+        <label for="register-confirm">Confirm password</label>
+        <input id="register-confirm" name="confirm" type="password"
+               autocomplete="new-password" required>
+        <p class="auth-msg" role="alert" aria-live="polite"></p>
+        <button type="submit" class="auth-submit">Create account</button>
+      </form>
+    </section>
+
+    <section class="auth-card" id="auth-signed-in" hidden>
+      <h2>You’re signed in</h2>
+      <p>Signed in as <b id="signed-in-email"></b>.</p>
+      <p id="signed-in-buttons">
+        <a class="auth-submit" href="/">Go to the map</a>
+        <button type="button" id="sign-out">Sign out</button>
+      </p>
+    </section>
+  </main>
+
+  <script src="/auth.js"></script>
+</body>
+</html>

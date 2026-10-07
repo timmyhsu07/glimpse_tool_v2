@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: glimpse-tool
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python backend/server.py
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.4"

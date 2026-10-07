@@ -1,0 +1,92 @@
+dataset,method,trust,sep2d,score_read,rash_read,recon,rt,score_inv,rash_inv,linear,supervised,invertible,out_of_sample,model_aware,fit_s,note
+pima,PCA,0.8353,0.8002,0.9105,0.4709,0.5273,0.0,0.9183,0.4817,True,False,True,True,False,0.001,
+pima,Random,0.7675,0.7374,0.7784,0.2276,0.642,0.0,0.7817,0.4227,True,False,True,True,False,0.001,
+pima,LDA,0.818,0.8602,0.9896,0.5394,0.5549,0.0,0.9972,0.553,True,True,True,True,False,0.003,
+pima,PLS,0.7817,0.8533,0.9862,0.476,0.5581,0.0,0.9889,0.5119,True,True,True,True,False,0.001,
+pima,NCA,0.7943,0.863,0.9884,0.485,0.575,0.0,0.9923,0.527,True,True,True,True,False,0.465,
+pima,KernelPCA,0.7756,0.8013,0.8678,0.4686,0.5588,0.471,0.8884,-0.084,False,False,True,True,False,0.016,
+pima,Isomap,0.83,0.7656,0.8719,0.4831,,,,,False,False,False,True,False,0.12,no inverse
+pima,t-SNE,0.9055,0.7593,0.874,0.573,,,,,False,False,False,False,False,0.534,in-sample only (refit); cannot place a new person
+pima,UMAP,0.8566,0.755,0.8298,0.4819,0.5948,0.3935,0.7204,0.527,False,False,True,True,False,6.019,
+pima,PaCMAP,0.8518,0.7385,0.7998,0.6173,,,,,False,False,False,True,False,0.239,no inverse
+pima,Autoencoder,0.865,0.7563,0.8653,0.6305,0.4734,0.0779,0.8893,0.5864,False,False,True,True,False,1.516,
+pima,SAE,0.7965,0.8315,0.8824,0.3686,0.5275,0.2161,0.9044,0.5424,False,True,True,True,False,0.395,
+pima,ECLIPSE,0.8105,0.8665,0.9894,0.4907,0.5568,0.0,0.9996,0.5461,True,True,True,True,True,0.077,
+heloc,PCA,0.7831,0.7827,0.8837,0.5986,0.5686,0.0,0.8818,0.4269,True,False,True,True,False,0.001,
+heloc,Random,0.6843,0.7114,0.6111,0.4043,0.6864,0.0,0.5275,0.4323,True,False,True,True,False,0.0,
+heloc,LDA,0.7656,0.8047,0.9865,0.5245,0.6165,0.0,0.9918,0.2249,True,True,True,True,False,0.003,
+heloc,PLS,0.7548,0.7984,0.9647,0.5331,0.6003,0.0,0.9621,0.3671,True,True,True,True,False,0.001,
+heloc,NCA,0.7476,0.8031,0.9621,0.5429,0.6493,0.0,0.9664,0.4194,True,True,True,True,False,10.178,
+heloc,KernelPCA,0.7361,0.7879,0.9029,0.7113,0.588,0.6152,0.9157,0.0018,False,False,True,True,False,0.23,
+heloc,Isomap,0.785,0.7675,0.8507,0.5554,,,,,False,False,False,True,False,1.991,no inverse
+heloc,t-SNE,0.9322,0.7383,0.8684,0.6237,,,,,False,False,False,False,False,1.594,in-sample only (refit); cannot place a new person
+heloc,UMAP,0.8666,0.7375,0.8773,0.5623,0.4803,0.1331,0.8742,0.4805,False,False,True,True,False,3.313,
+heloc,PaCMAP,0.8691,0.7062,0.8498,0.6068,,,,,False,False,False,True,False,0.297,no inverse
+heloc,Autoencoder,0.8579,0.7501,0.8266,0.6433,0.4747,0.0666,0.8365,0.4892,False,False,True,True,False,1.034,
+heloc,SAE,0.7329,0.7463,0.7512,0.574,0.5582,0.3946,0.7747,0.4508,False,True,True,True,False,1.192,
+heloc,ECLIPSE,0.7356,0.7994,0.9829,0.5484,0.6336,0.0,0.9926,0.439,True,True,True,True,True,1.034,
+cancer,PCA,0.905,0.9795,0.9555,0.833,0.3804,0.0,0.9715,0.848,True,False,True,True,False,0.0,
+cancer,Random,0.7567,0.8681,0.7716,0.6721,0.6966,0.0,0.7266,0.3816,True,False,True,True,False,0.0,
+cancer,LDA,0.8323,0.9831,0.9411,0.7425,0.5018,0.0,0.9432,0.7584,True,True,True,True,False,0.004,
+cancer,PLS,0.8605,0.9914,0.9803,0.8638,0.455,0.0,0.9878,0.8687,True,True,True,True,False,0.0,
+cancer,NCA,0.7729,0.9937,0.9955,0.7062,0.5896,0.0,0.9962,0.7577,True,True,True,True,False,0.212,
+cancer,KernelPCA,0.8163,0.9719,0.8736,0.8234,0.4682,0.4162,0.8946,0.8081,False,False,True,True,False,0.053,
+cancer,Isomap,0.9089,0.9878,0.9375,0.8422,,,,,False,False,False,True,False,0.092,no inverse
+cancer,t-SNE,0.929,0.9825,0.9225,0.8247,,,,,False,False,False,False,False,0.207,in-sample only (refit); cannot place a new person
+cancer,UMAP,0.8844,0.9884,0.8578,0.6564,0.4947,0.3398,0.8574,0.5107,False,False,True,True,False,0.591,
+cancer,PaCMAP,0.8943,0.9911,0.899,0.7403,,,,,False,False,False,True,False,0.073,no inverse
+cancer,Autoencoder,0.9167,0.9805,0.9154,0.817,0.3753,0.0354,0.9366,0.8449,False,False,True,True,False,0.347,
+cancer,SAE,0.7971,0.9689,0.9741,0.8385,0.3968,0.0471,0.9837,0.887,False,True,True,True,False,0.406,
+cancer,ECLIPSE,0.8965,0.9868,0.9734,0.8404,0.4491,0.0,0.995,0.8768,True,True,True,True,True,0.109,
+german,PCA,0.6732,0.7005,0.5813,0.1889,0.627,0.0,0.6489,0.1067,True,False,True,True,False,0.001,
+german,Random,0.6228,0.6475,0.3478,0.2525,0.6814,0.0,0.2494,0.3665,True,False,True,True,False,0.001,
+german,LDA,0.6493,0.7939,0.9674,0.1858,0.6399,0.0,0.9841,0.176,True,True,True,True,False,0.009,
+german,PLS,0.5939,0.7861,0.9606,0.1012,0.6589,0.0,0.9516,0.2019,True,True,True,True,False,0.001,
+german,NCA,0.6648,0.7732,0.9049,0.3094,0.6678,0.0,0.9211,0.2242,True,True,True,True,False,0.668,
+german,KernelPCA,0.6126,0.59,0.4397,0.8116,0.6433,1.8966,0.5227,-0.2769,False,False,True,True,False,0.066,
+german,Isomap,0.6877,0.6111,0.4101,0.2297,,,,,False,False,False,True,False,0.277,no inverse
+german,t-SNE,0.8575,0.5367,0.5096,0.6665,,,,,False,False,False,False,False,0.216,in-sample only (refit); cannot place a new person
+german,UMAP,0.8032,0.6874,0.5527,0.6423,0.66,0.4096,0.4306,0.3132,False,False,True,True,False,0.824,
+german,PaCMAP,0.777,0.4783,0.4486,0.4606,,,,,False,False,False,True,False,0.103,no inverse
+german,Autoencoder,0.7284,0.5146,0.3286,0.3305,0.5706,0.116,0.4393,0.158,False,False,True,True,False,0.554,
+german,SAE,0.6271,0.7285,0.8218,0.2456,0.633,0.5317,0.7962,0.36,False,True,True,True,False,0.545,
+german,ECLIPSE,0.6372,0.7882,0.9824,0.2475,0.6421,0.0,0.9991,0.2678,True,True,True,True,True,0.158,
+heart,PCA,0.8013,0.7889,0.8612,0.2627,0.6515,0.0,0.9074,0.1649,True,False,True,True,False,0.0,
+heart,Random,0.7007,0.8389,0.7482,0.3727,0.7502,0.0,0.7734,0.3597,True,False,True,True,False,0.0,
+heart,LDA,0.7939,0.7806,0.9368,0.2347,0.677,0.0,0.9684,0.1813,True,True,True,True,False,0.002,
+heart,PLS,0.7971,0.8028,0.953,0.3015,0.6667,0.0,0.9736,0.2419,True,True,True,True,False,0.001,
+heart,NCA,0.7653,0.7972,0.9661,0.4009,0.7199,0.0,0.9864,0.4229,True,True,True,True,False,0.03,
+heart,KernelPCA,0.7419,0.8542,0.8443,0.5649,0.6701,0.614,0.8706,-0.2181,False,False,True,True,False,0.007,
+heart,Isomap,0.8048,0.8125,0.7909,0.1524,,,,,False,False,False,True,False,0.017,no inverse
+heart,t-SNE,0.8773,0.7861,0.791,0.254,,,,,False,False,False,False,False,0.054,in-sample only (refit); cannot place a new person
+heart,UMAP,0.7937,0.8389,0.7414,0.272,0.7201,0.7627,0.4176,-0.0453,False,False,True,True,False,0.214,
+heart,PaCMAP,0.803,0.85,0.7151,0.3651,,,,,False,False,False,True,False,0.036,no inverse
+heart,Autoencoder,0.7944,0.8514,0.849,0.2429,0.6055,0.0948,0.8688,0.2316,False,False,True,True,False,0.106,
+heart,SAE,0.7178,0.7903,0.9492,0.0519,0.672,0.1056,0.9682,0.3865,False,True,True,True,False,0.2,
+heart,ECLIPSE,0.7866,0.7903,0.9611,0.2339,0.6911,0.0,0.9982,0.2962,True,True,True,True,True,0.037,
+spambase,PCA,0.678,0.9442,0.8879,0.6295,0.3562,0.0,0.8934,0.5909,True,False,True,True,False,0.001,
+spambase,Random,0.6064,0.6412,0.3642,0.6349,0.4177,0.0,0.3188,0.6154,True,False,True,True,False,0.0,
+spambase,LDA,0.6699,0.9566,0.9306,0.7138,0.3644,0.0,0.9307,0.6444,True,True,True,True,False,0.019,
+spambase,PLS,0.6775,0.9559,0.9247,0.6804,0.367,0.0,0.9227,0.6203,True,True,True,True,False,0.003,
+spambase,NCA,0.6476,0.9562,0.9542,0.7349,0.4077,0.0,0.958,0.7281,True,True,True,True,False,9.427,
+spambase,KernelPCA,0.6203,0.9155,0.7953,0.8551,0.3773,1.032,0.7792,0.7064,False,False,True,True,False,0.211,
+spambase,Isomap,0.6825,0.9253,0.8511,0.7418,,,,,False,False,False,True,False,1.866,no inverse
+spambase,t-SNE,0.853,0.9166,0.8874,0.7488,,,,,False,False,False,False,False,1.174,in-sample only (refit); cannot place a new person
+spambase,UMAP,0.8126,0.8783,0.846,0.6004,0.2553,0.1616,0.859,0.6359,False,False,True,True,False,3.512,
+spambase,PaCMAP,0.7893,0.8948,0.8663,0.641,,,,,False,False,False,True,False,0.387,no inverse
+spambase,Autoencoder,0.705,0.8982,0.838,0.7361,0.318,0.1147,0.8835,0.7628,False,False,True,True,False,1.116,
+spambase,SAE,0.6648,0.967,0.9143,0.7925,0.3255,0.1695,0.9157,0.7572,False,True,True,True,False,1.181,
+spambase,ECLIPSE,0.6656,0.9697,0.9953,0.869,0.3805,0.0,1.0,0.861,True,True,True,True,True,0.681,
+taiwan,PCA,0.8302,0.6932,0.86,0.6602,0.5039,0.0,0.8362,0.4447,True,False,True,True,False,0.0,
+taiwan,Random,0.6574,0.561,0.3331,0.4847,0.614,0.0,0.3959,0.4458,True,False,True,True,False,0.001,
+taiwan,LDA,0.8082,0.7248,0.9698,0.5179,0.5319,0.0,0.9482,0.2991,True,True,True,True,False,0.007,
+taiwan,PLS,0.7997,0.7071,0.9184,0.5694,0.5677,0.0,0.9033,0.3904,True,True,True,True,False,0.002,
+taiwan,NCA,0.8306,0.7146,0.9522,0.5542,0.5202,0.0,0.948,0.2573,True,True,True,True,False,8.803,
+taiwan,KernelPCA,0.7927,0.6398,0.7251,0.7219,0.4657,0.496,0.7209,0.2472,False,False,True,True,False,0.257,
+taiwan,Isomap,0.8433,0.6838,0.7906,0.3638,,,,,False,False,False,True,False,1.796,no inverse
+taiwan,t-SNE,0.9481,0.6684,0.831,0.6168,,,,,False,False,False,False,False,1.48,in-sample only (refit); cannot place a new person
+taiwan,UMAP,0.9336,0.6266,0.8273,0.4726,0.293,0.1133,0.8454,0.4589,False,False,True,True,False,3.582,
+taiwan,PaCMAP,0.9193,0.6089,0.8348,0.553,,,,,False,False,False,True,False,0.274,no inverse
+taiwan,Autoencoder,0.8802,0.6754,0.8062,0.5555,0.3561,0.0528,0.8328,0.3842,False,False,True,True,False,1.596,
+taiwan,SAE,0.7892,0.6935,0.7589,0.4351,0.417,0.4612,0.7748,0.367,False,True,True,True,False,1.281,
+taiwan,ECLIPSE,0.8085,0.7305,0.9914,0.5428,0.5608,0.0,0.9966,0.2693,True,True,True,True,True,0.692,
