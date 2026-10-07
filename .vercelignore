@@ -1,0 +1,19 @@
+# keep the deploy lean: matplotlib/pandas and dev cruft never ship to the runtime
+__pycache__/
+*.pyc
+.DS_Store
+
+# local account database
+data/
+*.db
+
+# local environment and tests
+.venv/
+.vercel/
+backend/tests/
+
+# research code and data never ship to the runtime
+testing/
+
+# local secrets pulled by the Vercel CLI
+.env*

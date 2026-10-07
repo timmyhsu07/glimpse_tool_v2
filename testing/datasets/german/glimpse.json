@@ -1,0 +1,10 @@
+{
+  "label": "German credit",
+  "target": "Outcome",
+  "positive": "bad",
+  "class_names": [
+    "Good risk",
+    "Bad risk"
+  ],
+  "balance": false
+}

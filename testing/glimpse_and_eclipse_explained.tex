@@ -1,0 +1,440 @@
+\documentclass[11pt]{article}
+
+\usepackage[margin=1.1in]{geometry}
+\usepackage{amsmath, amssymb}
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage[colorlinks=true, linkcolor=black, urlcolor=blue]{hyperref}
+\usepackage{parskip}
+\usepackage{enumitem}
+\usepackage{mdframed}
+
+\definecolor{boxbg}{HTML}{F4F6FA}
+\definecolor{rule}{HTML}{C9D2E3}
+
+\newmdenv[backgroundcolor=boxbg, linecolor=rule, linewidth=0.7pt,
+          innertopmargin=8pt, innerbottommargin=8pt,
+          innerleftmargin=11pt, innerrightmargin=11pt,
+          skipabove=10pt, skipbelow=10pt]{keybox}
+
+\title{\bfseries How GLIMPSE Works\\[4pt]
+\large and the mathematics behind its map, ECLIPSE}
+\author{Timothy Hsu \\ \small Aresty Summer Science Research Program}
+\date{}
+
+\begin{document}
+\maketitle
+
+\begin{keybox}
+\textbf{Who this is for.} Anyone who wants to understand what GLIMPSE does and why,
+without taking anything on faith. You need to be comfortable with the idea of an
+average and an arrow; everything else is built up as we go. Mathematical readers can
+skip the plain-language paragraphs -- the equations stand on their own.
+\end{keybox}
+
+\section{The problem}
+
+A model decides something about you. You did not get the loan. The screening says you
+are at risk of diabetes. Two questions follow immediately, and they are not the same
+question:
+
+\begin{enumerate}[leftmargin=*, itemsep=2pt]
+  \item \textbf{Why me, and what would have to change?}
+  \item \textbf{How sure is this, really?}
+\end{enumerate}
+
+Most explanation tools answer the first and quietly skip the second. GLIMPSE
+(\emph{Geometric Lens for Inspecting the Multiplicity of Sets and Explanations})
+answers both, on one picture, by drawing three things: where you stand, where the
+decision flips, and \emph{how much that flip line moves} if you had fitted a slightly
+different model.
+
+That last point is the one people find surprising, so it is worth stating plainly
+before any mathematics.
+
+\begin{keybox}
+\textbf{There is rarely one model.} Train a model on the same data with a slightly
+different random seed, a slightly different regularisation, a slightly different
+split, and you get a \emph{different} model that is \emph{just as accurate}. These
+near-tied models frequently disagree about individual people -- one says approve,
+another says decline, and no amount of test-set accuracy can tell you which is right.
+This collection of equally-good models is called a \textbf{Rashomon set}, after the
+film in which four witnesses describe the same event four irreconcilable ways.
+
+If your explanation is drawn from only one of them, it is more confident than the
+evidence supports. GLIMPSE draws the whole set.
+\end{keybox}
+
+\section{Part 1 --- the score}
+
+Your information is a list of $d$ numbers. Glucose, BMI, age, and so on. Call that
+list $x$. Every number is first put on a common scale, so that ``one unit'' means
+``one standard deviation'' for every feature and none of them dominates just because
+it happens to be measured in larger units.
+
+The model attaches a weight to each feature and adds them up:
+\[
+  s(x) \;=\; w^\top x + b \;=\; w_1 x_1 + w_2 x_2 + \cdots + w_d x_d + b .
+\]
+This single number $s(x)$ is your \textbf{score}. A positive weight $w_j$ means that
+feature pushes you toward the bad outcome; a negative one pushes away.
+
+The score is turned into a probability by the \textbf{logistic} (or sigmoid) function,
+which squashes any number onto the range $0$ to $1$:
+\[
+  p(y = 1 \mid x) \;=\; \sigma\big(s(x)\big), \qquad
+  \sigma(z) = \frac{1}{1 + e^{-z}} .
+\]
+Score $0$ means probability exactly $1/2$ -- the fence. That is why the set of people
+with $s(x) = 0$ is called the \textbf{decision boundary}.
+
+Because the score is a plain weighted sum, the boundary is \emph{flat}: a line in two
+dimensions, a plane in three, a \emph{hyperplane} in $d$. This flatness is what makes
+everything later possible.
+
+\begin{keybox}
+\textbf{Why the sigmoid, and not some other S-shaped curve?}
+It is not an arbitrary choice. Suppose each outcome group forms a Gaussian (bell-shaped)
+cloud in feature space, and the two clouds have the same shape $\Sigma$, differing only
+in where they sit ($\mu_0$ versus $\mu_1$). Write down Bayes' rule for
+$p(y{=}1 \mid x)$. Each bell curve contributes a squared term
+$-\tfrac12 (x - \mu_k)^\top \Sigma^{-1} (x - \mu_k)$; because the shape $\Sigma$ is
+shared, the genuinely quadratic parts are \emph{identical} in both and cancel when you
+subtract. What is left is exactly linear:
+\[
+  \log \frac{p(y{=}1 \mid x)}{p(y{=}0\mid x)} = w^\top x + b,
+  \qquad w = \Sigma^{-1}(\mu_1 - \mu_0).
+\]
+So the logistic model is not an approximation under these assumptions -- it is the
+\emph{exact} answer. This is what is meant by the remark that ``$p(y \mid x)$ comes
+from a Gaussian.''
+
+Two consequences matter for the rest of this document. First, the right direction to
+point at is $\Sigma^{-1}(\mu_1 - \mu_0)$, \emph{not} the difference of the group
+averages $\mu_1 - \mu_0$; you have to correct for how the features vary together
+before you point. Second, $p(y\mid x)$ depends on $x$ \emph{only} through the single
+number $w^\top x$. All of the information about the outcome lives along \textbf{one
+direction}. Remember that; Section 6 depends on it.
+\end{keybox}
+
+\section{Part 2 --- the fan of equally-good models}
+
+Fitting a model means choosing the parameters $\theta = (w, b)$ that make the
+training data least surprising, measured by the average \emph{log-loss} $L(\theta)$.
+The fitted $\hat\theta$ is the bottom of that valley.
+
+Now ask a different question: not ``which parameters are best?'' but ``which parameters
+are \emph{good enough}?'' Fix a small tolerance $\varepsilon$ and collect every model
+whose loss is within $\varepsilon$ of the best:
+\[
+  R_\varepsilon \;=\; \{\, \theta \;:\; L(\theta) \le L(\hat\theta) + \varepsilon \,\}.
+\]
+This is the \textbf{Rashomon set}. GLIMPSE uses $\varepsilon = 0.03$.
+
+$R_\varepsilon$ is an awkward shape, so we approximate it. Near the bottom of a smooth
+valley, any loss function looks like a parabola -- this is just a second-order Taylor
+expansion, and the first-order term vanishes \emph{because} we expanded at the minimum,
+where the gradient is zero:
+\[
+  L(\theta) \;\approx\; L(\hat\theta)
+  \;+\; \tfrac{1}{2}(\theta - \hat\theta)^\top H (\theta - \hat\theta),
+\]
+where $H$ is the matrix of second derivatives (the Hessian). Substituting gives a clean
+shape:
+\[
+  R_\varepsilon \;\approx\;
+  \big\{\, \theta : (\theta-\hat\theta)^\top Q\, (\theta-\hat\theta) \le 1 \,\big\},
+  \qquad Q = \frac{H}{2\varepsilon}.
+\]
+
+That is the equation of an \textbf{ellipsoid} -- a stretched, tilted ball centred on
+the fitted model. Directions in which the loss rises steeply are directions in which
+the ellipsoid is thin: the data pinned those weights down. Directions in which the loss
+is nearly flat are directions in which it is long: the data barely constrained them,
+so models far apart there are all equally defensible.
+
+\subsection*{How much do the good models disagree about \emph{you}?}
+
+Every model in the ellipsoid gives you a score. Sweeping over all of them traces out an
+\emph{interval} of scores rather than a single value, and the half-width of that
+interval has a closed form. Writing $\tilde{x} = (x, 1)$ for your features with a $1$
+appended to absorb the intercept:
+\[
+  \boxed{\;
+  \mathrm{dis}(x) \;=\; \big\| \, Q^{-1/2}\, \tilde{x} \, \big\|
+  \;}
+\]
+and the equally-good models place your score somewhere in
+$\;\hat{s}(x) \pm \mathrm{dis}(x)$.
+
+This one number is the heart of GLIMPSE. A small $\mathrm{dis}(x)$ means every
+defensible model agrees about you and the decision is solid. A large $\mathrm{dis}(x)$
+means your outcome is an artefact of which model happened to be trained -- and you
+deserve to be told that.
+
+It also gives \textbf{robust recourse}. The usual advice ``lower your BMI by $2$ and
+you flip'' is advice that flips \emph{the one model that was fitted}. GLIMPSE instead
+asks for a change that flips \emph{every} model in the ellipsoid: it requires
+$\hat{s}(x) - \mathrm{dis}(x)$ to cross the boundary, not just $\hat s (x)$. That
+advice costs more, and it actually works.
+
+\section{Part 3 --- why a map is needed, and why it is hard}
+
+Everything above lives in $d$ dimensions -- $8$ for the diabetes data, $57$ for the
+spam data. Nobody can see that. To show it to a person, we need to flatten it onto a
+sheet of paper, and \emph{any} flattening throws information away. The only real
+question is \textbf{which} information.
+
+We call the choice of flattening a \textbf{lens}. Formally a lens picks two directions
+$a_1, a_2$ in feature space and reports where you fall along each:
+\[
+  z \;=\; \big( a_1^\top (x - \bar{x}),\;\; a_2^\top (x - \bar{x}) \big)
+  \;\in\; \mathbb{R}^2 .
+\]
+
+Because this is just two weighted sums, it is \emph{affine}, and affine maps have three
+properties GLIMPSE cannot do without:
+
+\begin{enumerate}[leftmargin=*, itemsep=3pt]
+  \item \textbf{Straight stays straight.} The flat decision boundary in $d$ dimensions
+        appears as an honest straight \emph{line} on screen.
+  \item \textbf{It runs backwards, exactly.} Click anywhere on the map and there is a
+        formula returning the corresponding person -- their glucose, their BMI. Without
+        this, ``what would I have to change?'' has no answer.
+  \item \textbf{It handles strangers.} A new person who was not in the training data
+        gets a position from the same two dot products. This is what makes the ``enter
+        your own numbers'' box possible at all.
+\end{enumerate}
+
+Popular methods such as t-SNE and UMAP make prettier pictures but give up some or all
+of these. t-SNE cannot place a person it has not already seen, which by itself
+disqualifies it for an interactive tool.
+
+\section{Part 4 --- what is wrong with PCA}
+
+The default lens is Principal Component Analysis. PCA picks the two directions along
+which the data is most \emph{spread out}. Concretely, it takes the covariance matrix
+$\Sigma$ and uses its top two \textbf{eigenvectors}.
+
+\begin{keybox}
+\textbf{Eigenvectors, informally.} A symmetric matrix $M$ describes an amount of
+``interest'' in every direction: point a unit arrow $v$ and the quantity $v^\top M v$
+says how much of it lies that way. Almost every arrow gets tilted when you apply $M$,
+but a few special ones do not -- they only get longer or shorter:
+\[
+  M v = \lambda v .
+\]
+These are the eigenvectors, and $\lambda$ is how much stretching each receives. The
+eigenvector with the largest $\lambda$ is precisely the direction that maximises
+$v^\top M v$, and the second-largest is the best direction at right angles to it. So
+\emph{``take the top two eigenvectors''} always means the same thing: \emph{the flat
+plane holding as much of the interest described by $M$ as any plane can.}
+\end{keybox}
+
+PCA is a perfectly good answer to the question it asks. The trouble is that it asks the
+wrong question. PCA looks only at $\Sigma$ -- how the features vary. It is never told
+that there is a model, a decision, or a Rashomon set. The direction the decision
+actually depends on is $w$, and $w$ only lands in PCA's plane by luck.
+
+The Gaussian argument in Part 1 sharpens this into something stronger than a
+complaint. The direction that carries the outcome information is
+$\Sigma^{-1}(\mu_1-\mu_0)$, which requires knowing $\mu_1 - \mu_0$ -- information PCA
+never receives. PCA \emph{cannot} find the right axis except by accident.
+
+\section{Part 5 --- ECLIPSE}
+
+ECLIPSE starts from a simple observation: we do not want a plane that shows one thing
+well. We want a plane that shows \emph{several} things tolerably. So write down each
+thing worth seeing as its own matrix, then blend them.
+
+\subsection*{The four things worth seeing}
+
+Each is a $d \times d$ symmetric matrix, and in each case the quantity $v^\top S_i v$
+measures ``how much of this you would see along direction $v$.''
+
+\begin{enumerate}[leftmargin=*, itemsep=5pt]
+  \item \textbf{Spread} --- $S_0 = \mathrm{Cov}(X)$. \\
+        People should not all land on top of each other. This is exactly PCA's
+        criterion, kept as one voice among four rather than the only one.
+
+  \item \textbf{The model} --- $S_1 = w w^\top$. \\
+        A rank-one matrix built from the weight vector. Since
+        $v^\top (w w^\top) v = (v^\top w)^2$, it is large exactly when $v$ points along
+        $w$. Including it pulls the map toward showing the score as a left-to-right
+        position.
+
+  \item \textbf{Disagreement} --- $S_2 = \mathbb{E}\!\left[\nabla \mathrm{dis}\,
+        \nabla \mathrm{dis}^\top\right]$. \\
+        $\nabla \mathrm{dis}$ is the direction in which the disagreement
+        $\mathrm{dis}(x)$ changes fastest. Averaging the outer product over everybody
+        gives the directions along which model uncertainty varies most. Keeping these
+        in the plane is what lets a user \emph{see} where the good models stop agreeing.
+
+  \item \textbf{Imputation} --- $S_3 = \mathrm{diag}(f_j \cdot \sigma_j^2)$. \\
+        $f_j$ is the fraction of people whose feature $j$ was missing and had to be
+        filled in. This keeps guessed-at features visible instead of hiding the fact
+        that part of the picture was invented.
+\end{enumerate}
+
+Each matrix is rescaled to have trace $1$, so that ``one unit of interest'' means the
+same thing in all four and the weights below are comparable.
+
+\subsection*{The blend}
+
+Choose four non-negative weights summing to one and add the matrices up:
+\[
+  \boxed{\;
+    M \;=\; \omega_0 S_0 \;+\; \omega_1 S_1 \;+\; \omega_2 S_2 \;+\; \omega_3 S_3,
+    \qquad \textstyle\sum_i \omega_i = 1, \;\; \omega_i \ge 0.
+  \;}
+\]
+Then take the top two eigenvectors of $M$ as the two axes of the map.
+
+That is the entire method. Its justification is the fact in the eigenvector box: the
+top-two eigenvectors of $M$ give the plane maximising total interest $v^\top M v$, so
+ECLIPSE returns \emph{the flat plane that best satisfies all four demands at once, in
+the proportions you asked for}. Formally it maximises the sum of the two largest values
+of $A^\top M A$ over planes $A$, which is a Ky Fan extremal problem with exactly this
+solution.
+
+Two sanity checks:
+\begin{itemize}[leftmargin=*, itemsep=2pt]
+  \item $\omega = (1, 0, 0, 0)$ gives $M = \mathrm{Cov}(X)$ --- \textbf{ECLIPSE reduces
+        exactly to PCA}. PCA is a special case, not a rival.
+  \item $\omega = (0, 1, 0, 0)$ gives $M = ww^\top$, which has rank one: the first axis
+        becomes $w$ itself and the second is unconstrained. Showing the score perfectly
+        and nothing else.
+\end{itemize}
+Every useful lens sits between these two extremes, which is what the weights are for.
+
+\subsection*{Choosing the weights without cheating}
+
+Hand-tuning the weights per dataset would be a way of fitting the picture to whatever
+we hoped to see. ECLIPSE instead chooses them by a rule, on data held out for the
+purpose:
+
+\begin{enumerate}[leftmargin=*, itemsep=3pt]
+  \item Split off a validation set the lens is not fitted on.
+  \item Compute PCA's neighbourhood faithfulness (\emph{trustworthiness}) there. This
+        is the benchmark.
+  \item Sweep candidate weightings. \textbf{Reject} any whose trustworthiness falls
+        more than $\tau = 0.05$ below PCA's. This is the promise that the map never
+        becomes much more distorted than the familiar one.
+  \item Among the survivors, keep the one that best preserves the score ordering
+        \emph{and} the disagreement ordering (the product of the two rank
+        correlations, so a candidate must do acceptably at both).
+\end{enumerate}
+
+The result: at most $0.05$ of neighbourhood faithfulness is ever spent, and it is spent
+on the two things a decision map exists to show.
+
+\section{Part 6 --- what the Gaussian argument buys}
+
+Return to the fact from Part 1: under Gaussian outcome groups with a shared shape,
+$p(y \mid x)$ depends on $x$ only through $w^\top x$. The score is a \textbf{sufficient
+statistic}.
+
+This has a sharp design consequence. If \emph{all} the outcome information lies along
+one direction, then a second ``outcome axis'' on the map is not merely unhelpful --
+there is provably nothing left for it to carry. The correct architecture for a 2-D
+decision map is therefore:
+
+\begin{center}
+\emph{axis 1 carries the score; axis 2 carries something the score cannot tell you.}
+\end{center}
+
+Which is precisely the shape of the blend: $S_1$ claims the first axis, and $S_0$,
+$S_2$, $S_3$ compete for the second. It also explains something that looks like a flaw
+elsewhere: Linear Discriminant Analysis yields only \emph{one} discriminant direction
+for a two-class problem. That is not a limitation of LDA. It is LDA being right about a
+problem that has only one informative direction.
+
+Taking the argument literally suggests a variant -- set $a_1 = w / \|w\|$ exactly, and
+give $a_2$ the best of what remains. Tested across seven datasets, this makes the score
+a \emph{perfect} function of the horizontal position (rank correlation $1.000$ on all
+seven, against $0.997$ for the tuned rule), confirming the theory numerically.
+
+\begin{keybox}
+\textbf{Two different Gaussians.} They are easy to confuse.
+\begin{itemize}[leftmargin=*, itemsep=1pt]
+  \item A Gaussian over \textbf{$x$ given $y$} (Part 1) makes the log-odds linear, so
+        the boundary is a straight line.
+  \item A Gaussian over \textbf{$\theta$ given the data} (Part 2) makes the Rashomon
+        set an ellipsoid --- the parabola approximation there is the same thing as a
+        Gaussian approximation to the posterior over parameters.
+\end{itemize}
+One assumption makes the boundary a line; the other makes the uncertainty an ellipse.
+GLIMPSE draws exactly those two objects.
+\end{keybox}
+
+\section{Part 7 --- knowing in advance when this cannot work}
+
+An honest method should be able to say when it will fail. ECLIPSE can.
+
+No flat plane can show everything. For the disagreement term specifically there is a
+hard ceiling. Let $\alpha_1 \ge \alpha_2 \ge \cdots \ge \alpha_d$ be the eigenvalues of
+$\Sigma^{1/2} A\, \Sigma^{1/2}$, where $A$ is the matrix defining $\mathrm{dis}$. Then
+define
+\[
+  \kappa_2 \;=\; \sqrt{ \frac{\alpha_1^2 + \alpha_2^2}
+                             {\alpha_1^2 + \cdots + \alpha_d^2} } \;\in\; [0, 1].
+\]
+$\kappa_2$ bounds how well \emph{any} two-dimensional plane can represent model
+disagreement -- not just ECLIPSE's, any plane at all.
+
+The useful part is that $\kappa_2$ is computable \emph{before fitting any lens}. If it
+is close to $1$, the disagreement structure is essentially two-dimensional and a map
+can show it. If it is small, that structure is spread across many directions and no
+picture will capture it; weight spent on $S_2$ is wasted and should go to the score
+instead.
+
+Measured across seven datasets this behaves as advertised: $\kappa_2$ ranges from
+$0.37$ (German credit) to $0.96$ (breast cancer), and it correctly separates the
+datasets where the disagreement axis pays for itself from those where it cannot.
+Using $\kappa_2$ directly in place of the validation sweep gives statistically
+indistinguishable maps roughly $170\times$ faster.
+
+\section{Summary}
+
+\begin{keybox}
+\begin{enumerate}[leftmargin=*, itemsep=4pt]
+  \item Your information is a list of numbers $x$; the model scores you with a weighted
+        sum $s(x) = w^\top x + b$ and the sigmoid turns that into a probability. Under
+        Gaussian outcome groups, this is not an approximation but the exact posterior.
+  \item Many \emph{different} models fit the data equally well. To second order they
+        form an ellipsoid around the fitted one, and the spread of scores they assign
+        you is $\mathrm{dis}(x) = \|Q^{-1/2}\tilde{x}\|$ --- how much your decision
+        depends on which model happened to be trained.
+  \item Showing this to a person means flattening $d$ dimensions onto two. GLIMPSE uses
+        an affine lens, which keeps straight boundaries straight, runs backwards
+        exactly, and can place a person it has never seen.
+  \item PCA chooses that plane using spread alone and is never told a decision exists.
+  \item ECLIPSE writes each thing worth seeing as a matrix --- spread, model,
+        disagreement, imputation --- blends them with weights $\omega$, and takes the
+        top two eigenvectors of the blend. $\omega = (1,0,0,0)$ recovers PCA exactly.
+  \item The weights are chosen by a rule on held-out data, never by hand, and the rule
+        may never give up more than $\tau = 0.05$ of neighbourhood faithfulness
+        relative to PCA.
+  \item $\kappa_2$ says in advance how much of the disagreement structure \emph{any}
+        flat map could possibly show, so the method knows when to stop trying.
+\end{enumerate}
+\end{keybox}
+
+\vspace{6pt}
+\noindent\textbf{Notation.}\quad
+$x$ features (standardised) $\cdot$
+$y$ outcome $\cdot$
+$w, b$ weights and intercept $\cdot$
+$\theta = (w,b)$ $\cdot$
+$\sigma(\cdot)$ logistic function $\cdot$
+$\Sigma$ covariance of the features $\cdot$
+$H$ Hessian of the loss $\cdot$
+$\varepsilon$ Rashomon tolerance $\cdot$
+$Q = H/2\varepsilon$ $\cdot$
+$\mathrm{dis}(x)$ disagreement half-width $\cdot$
+$S_0 \ldots S_3$ interest matrices $\cdot$
+$\omega$ blend weights $\cdot$
+$\tau$ trustworthiness budget $\cdot$
+$\kappa_2$ disagreement ceiling.
+
+\end{document}
