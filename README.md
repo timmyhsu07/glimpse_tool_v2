@@ -15,8 +15,7 @@ users can save the values they choose under a name and load them later.
 `glimpse_tool_v2` is the current working version of GLIMPSE, live at
 https://glimpse-dev-hazel.vercel.app. It grew out of the original `glimpse_tool`
 (commit `768ad79`) and adds the frontend/backend split, accounts, saved values,
-the map toggle and exact map clicks. Research code that uses the same engine is
-in `testing/`.
+the map toggle and exact map clicks.
 
 ```bash
 cd glimpse_tool_v2
@@ -42,7 +41,6 @@ backend/
   tests/
   data/glimpse.db      created on first use; not committed or deployed
 api/index.py         Vercel entry point; loads backend/api/index.py
-testing/             research on the same engine (benchmark, tradeoff, write-ups)
 ```
 
 ## API

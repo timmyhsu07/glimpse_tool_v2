@@ -16,3 +16,6 @@ __pycache__/
 # local account database (backend/api/auth.py); never commit or deploy it
 data/
 *.db
+
+# research workbench: kept locally, not part of the tool
+testing/
