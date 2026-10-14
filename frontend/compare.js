@@ -71,10 +71,9 @@ function summaryCard(title, person, names) {
   return `<div class="cmp-card ${bad ? "bad" : "good"}">
     <div class="vlabel">${G.esc(title)}</div>
     <div class="vpred">${G.esc(bad ? names[1] : names[0])}</div>
-    <div class="vrange">${pct(m.p)} chance of ${G.esc(names[1])}
-      <span class="sub">· models say ${lo}–${hi}%</span></div>
-    <div class="vbar" role="img" aria-label="${lo} to ${hi} percent, best guess ${pct(m.p)}">
-      <span style="left:${lo}%;right:${100 - hi}%"></span><i style="left:${Math.round(m.p * 100)}%"></i></div>
+    <div class="vrange"><b class="vchance">${pct(m.p)}</b> chance of ${G.esc(names[1])}</div>
+    <div class="vothers sub">Other good models: ${lo}–${hi}%</div>
+    ${G.rangeBar(lo, hi, Math.round(m.p * 100), names[0], names[1])}
   </div>`;
 }
 

@@ -106,8 +106,7 @@ function saveCard(s, person, names) {
     <div class="sc-head"><b class="sc-name">${G.esc(s.name)}</b><span class="sub">${day(s.updated_at)}</span></div>
     <div class="sc-verdict"><span class="sc-pred">${G.esc(bad ? names[1] : names[0])}</span>
       <span>${p}% <span class="sub">· ${lo}–${hi}%</span></span></div>
-    <div class="vbar" role="img" aria-label="${lo} to ${hi} percent, best guess ${p}">
-      <span style="left:${lo}%;right:${100 - hi}%"></span><i style="left:${p}%"></i></div>
+    ${G.rangeBar(lo, hi, p, names[0], names[1], true)}
     <div class="sc-actions">
       <a href="/app.html?dataset=${encodeURIComponent(s.dataset)}&save=${s.id}">Open</a>
       <button type="button" data-act="rename">Rename</button>
