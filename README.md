@@ -28,14 +28,18 @@ PORT=8010 .venv/bin/python backend/server.py  # http://127.0.0.1:8010
 
 ```
 frontend/            the site: served as-is, no build step
-  index.html app.js    the map
-  login.html auth.js   sign in / create account
-  style.css            shared by both pages
+  index.html home.js   home: pick a topic
+  app.html app.js      the map, verdict, "how you compare", what would change it
+  login.html auth.js   sign in, create account, forgot / reset password
+  account.html account.js   my account: saves, change password, delete account
+  common.js            shared: theme, navigation, topic names, "?" tips
+  style.css            shared by every page
 backend/
   server.py            local server: API + frontend on one port
   api/index.py         HTTP routes
   api/auth.py          accounts, sessions, saved values
   api/db.py            SQLite locally, Postgres when DATABASE_URL is set
+  api/mailer.py        sends password-reset emails (Resend)
   engine/              models, Rashomon sets, ECLIPSE lens; cached fits in precomputed/
   precompute.py        refits the models into engine/precomputed/ (needs pandas)
   tests/
@@ -55,6 +59,11 @@ api/index.py         Vercel entry point; loads backend/api/index.py
 | GET | `/api/saved?dataset=` | the user's named saves for a dataset, newest first |
 | POST | `/api/saved` | `{dataset, name, values}`; replaces a save with the same name (max 50) |
 | DELETE | `/api/saved?id=` | delete one save |
+| GET | `/api/account` | email, member since, saves per topic |
+| POST | `/api/account/password` | `{current, new}`; signs out other browsers |
+| POST | `/api/account/delete` | `{password}`; removes the account and every save |
+| POST | `/api/forgot` | `{email}`; emails a one-time reset link (1 hour) |
+| POST | `/api/reset` | `{token, password}`; sets the new password and signs in |
 
 ## Deploying to Vercel
 
@@ -70,6 +79,12 @@ database the maps still work and sign-in reports that accounts are not set up.
 ```bash
 vercel deploy --prod      # or push to main: the glimpse-dev project deploys from this repo
 ```
+
+**Reset emails.** "Forgot password" sends a one-time link by email. Set
+`RESEND_API_KEY` (a free key from resend.com) and `MAIL_FROM` (an address on a domain
+you have verified with Resend) in the Vercel project. Until then the live site says
+reset by email isn't set up. Locally the link is printed in the server window.
+`APP_URL` can pin the address used in the links.
 
 Passwords are stored as scrypt hashes. Sessions are 30-day HttpOnly cookies (Secure
 over HTTPS), and repeated failed sign-ins are throttled per email and per IP.

@@ -16,16 +16,25 @@ import auth  # noqa: E402
 import db  # noqa: E402
 
 # Static files available when this handler runs from a normal web server.
+_HTML, _JS = "text/html; charset=utf-8", "application/javascript; charset=utf-8"
 _STATIC = {
-    "/": ("index.html", "text/html; charset=utf-8"),
-    "/index.html": ("index.html", "text/html; charset=utf-8"),
-    "/app.js": ("app.js", "application/javascript; charset=utf-8"),
+    "/": ("index.html", _HTML),
+    "/index.html": ("index.html", _HTML),
+    "/app": ("app.html", _HTML),
+    "/app.html": ("app.html", _HTML),
+    "/login": ("login.html", _HTML),
+    "/login.html": ("login.html", _HTML),
+    "/account": ("account.html", _HTML),
+    "/account.html": ("account.html", _HTML),
+    "/common.js": ("common.js", _JS),
+    "/home.js": ("home.js", _JS),
+    "/app.js": ("app.js", _JS),
+    "/auth.js": ("auth.js", _JS),
+    "/account.js": ("account.js", _JS),
     "/style.css": ("style.css", "text/css; charset=utf-8"),
-    "/login": ("login.html", "text/html; charset=utf-8"),
-    "/login.html": ("login.html", "text/html; charset=utf-8"),
-    "/auth.js": ("auth.js", "application/javascript; charset=utf-8"),
 }
-_AUTH = ("/me", "/register", "/login", "/logout", "/saved")
+_AUTH = ("/me", "/register", "/login", "/logout", "/saved", "/account",
+         "/account/password", "/account/delete", "/forgot", "/reset")
 
 _gs = None
 _BUILD = "rewrite-root-3"
@@ -84,6 +93,16 @@ def _same_origin(headers):
     return urlparse(origin).netloc == host
 
 
+def _base_url(headers):
+    """Where reset links point. A configured URL wins over request headers."""
+    fixed = os.environ.get("APP_URL") or os.environ.get("VERCEL_PROJECT_PRODUCTION_URL")
+    if fixed:
+        return fixed.rstrip("/") if "://" in fixed else "https://" + fixed.rstrip("/")
+    proto = headers.get("X-Forwarded-Proto") or "http"
+    host = headers.get("X-Forwarded-Host") or headers.get("Host") or "localhost"
+    return f"{proto}://{host}"
+
+
 def _client_ip(headers):
     fwd = headers.get("X-Forwarded-For", "")
     return (headers.get("X-Real-IP") or fwd.split(",")[0]).strip()
@@ -102,6 +121,8 @@ def _auth_route(method, p, q, body, headers):
         return _saved_route(method, q, body, token)
     if method == "GET" and p.endswith("/me"):
         return 200, {"user": auth.current_user(token)}, {}
+    if method == "GET" and p.endswith("/account"):
+        return auth.account(token)
     if method != "POST":
         return 405, {"error": "method not allowed"}, {}
     if p.endswith("/logout"):
@@ -111,7 +132,17 @@ def _auth_route(method, p, q, body, headers):
         return 400, {"error": "invalid JSON body"}, {}
     if p.endswith("/register"):
         return auth.register(data, secure)
-    return auth.login(data, secure, _client_ip(headers))
+    if p.endswith("/account/password"):
+        return auth.change_password(token, data)
+    if p.endswith("/account/delete"):
+        return auth.delete_account(token, data, secure)
+    if p.endswith("/forgot"):
+        return auth.request_reset(data, _base_url(headers), _client_ip(headers))
+    if p.endswith("/reset"):
+        return auth.reset_password(data, secure)
+    if p.endswith("/login"):
+        return auth.login(data, secure, _client_ip(headers))
+    return 404, {"error": "not found"}, {}
 
 
 def _map_point(value):
