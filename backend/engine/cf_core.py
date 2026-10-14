@@ -125,13 +125,26 @@ def _setup(dataset_key, eps):
     scatter_idx = (np.arange(n) if n <= N_SCATTER
                    else rng.choice(n, N_SCATTER, replace=False))
 
+    # Hover cards: each dot's chance under the simple model, the range across
+    # the equally-good models, and its values for the two weightiest features.
+    Xs = data.X[scatter_idx]
+    logit_s = lin.logit(Xs)
+    pen_s = logit_s - lin_ell.robust_logit(Xs, 1)
+    plain = [j for j, f in enumerate(m["features"]) if not f.get("group")]
+    by_weight = sorted(plain, key=lambda j: -abs(lin.w[j]))
+    key_j = by_weight[:2]
+    scatter_info = dict(p=_sigmoid(logit_s), lo=_sigmoid(logit_s - pen_s),
+                        hi=_sigmoid(logit_s + pen_s), key_j=key_j,
+                        vals=data.X_real[scatter_idx][:, key_j],
+                        importance=[str(data.feature_names[j]) for j in by_weight])
+
     setup = dict(
         **m, lens=lens, emb=emb, bounds=bounds, eps=float(eps),
         grids=grids, field_axes=field_axes,
         lin_field=lin_field, mlp_field=mlp_field,
         lin_boundary=lin_boundary, lin_fan=lin_fan,
         mlp_boundary=mlp_boundary, mlp_fan=mlp_fan,
-        scatter_idx=scatter_idx,
+        scatter_idx=scatter_idx, scatter_info=scatter_info,
     )
     _VIEWS[key] = setup
     return setup
@@ -392,10 +405,19 @@ def get_scene(dataset_key, eps=0.03, query_id=None, custom=None):
     for p in panels.values():
         del p["_cf_rob_full"], p["_cf_std_full"]
 
-    idx = setup["scatter_idx"]
+    idx, si = setup["scatter_idx"], setup["scatter_info"]
     pts_payload = [{"id": int(i), "x": float(emb[i, 0]), "y": float(emb[i, 1]),
-                    "outcome": int(data.y[i])}
-                   for i in idx]
+                    "outcome": int(data.y[i]),
+                    "p": round(float(si["p"][k]), 3),
+                    "lo": round(float(si["lo"][k]), 3),
+                    "hi": round(float(si["hi"][k]), 3),
+                    "v": [round(float(v), 3) for v in si["vals"][k]]}
+                   for k, i in enumerate(idx)]
+    key_features = [{"name": str(setup["features"][j]["name"]),
+                     "label": str(setup["features"][j]["label"]),
+                     "unit": setup["features"][j].get("unit", ""),
+                     "integer": bool(setup["features"][j].get("integer"))}
+                    for j in si["key_j"]]
 
     lo, hi = setup["bounds"]
     return {
@@ -409,6 +431,8 @@ def get_scene(dataset_key, eps=0.03, query_id=None, custom=None):
         "bounds": {"x": [float(lo[0]), float(hi[0])],
                    "y": [float(lo[1]), float(hi[1])]},
         "points": pts_payload,
+        "key_features": key_features,
+        "importance": si["importance"],
         "query": query,
         "panels": panels,
         "deltas": deltas,

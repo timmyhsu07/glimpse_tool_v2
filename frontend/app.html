@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="google-site-verification" content="mQlGSmTbCYFctZavIyGIMyBsTILOaBCQHSwizkSydew">
+  <meta name="description" content="GLIMPSE is a university research tool that shows how sure machine-learning models are about a prediction, and what would change it.">
+  <title>Map — GLIMPSE</title>
+  <script>
+    // Apply the saved theme before the page renders.
+    (function () {
+      try {
+        var q = new URLSearchParams(location.search).get("theme");
+        var t = (q === "dark" || q === "light") ? q
+              : localStorage.getItem("glimpse-theme");
+        if (t !== "dark" && t !== "light")
+          t = matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+        document.documentElement.setAttribute("data-theme", t);
+      } catch (e) {}
+    })();
+  </script>
+  <link rel="stylesheet" href="/style.css">
+  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js" charset="utf-8"></script>
+</head>
+<body data-page="app">
+  <header id="titlebar">
+    <a class="brand" href="/">GLIMPSE</a>
+    <nav id="nav" aria-label="Main">
+      <a href="/" data-page="home">Home</a>
+      <a href="/app.html" data-page="app">Map</a>
+      <a href="/login.html" data-page="account" id="account-link">Sign in</a>
+    </nav>
+    <button id="theme-toggle" class="theme-btn" type="button"
+            aria-label="Toggle light and dark mode"></button>
+  </header>
+
+  <div id="controls">
+    <label>Topic <select id="dataset"></select></label>
+    <span id="busy" class="sub" role="status"></span>
+  </div>
+
+  <section id="hero">
+    <div id="hero-maps">
+      <div class="map-head">
+        <h2 class="hero-h">Map <span id="map-tip"></span>
+          <span class="sub">Click anywhere</span></h2>
+        <label class="switch" id="old-graph-switch">
+          <input type="checkbox" id="old-graph"> Old GLIMPSE graph (test)</label>
+      </div>
+      <div class="map-tools">
+        <div id="map-toggle" role="group" aria-label="Which model's map">
+          <button type="button" data-view="linear">Simple</button>
+          <button type="button" data-view="mlp">Flexible</button>
+          <button type="button" data-view="both">Both</button>
+        </div>
+        <button type="button" class="tool-btn" id="find-me">Find me</button>
+        <button type="button" class="tool-btn" id="reset-zoom">Reset zoom</button>
+        <label class="switch" id="disputed-switch" hidden>
+          <input type="checkbox" id="show-disputed"> Most disputed</label>
+      </div>
+      <div id="plots">
+        <div class="plot-cell" id="cell-linear">
+          <h3>Simple model <span id="tip-linear"></span></h3>
+          <div id="plot-linear" class="plot"></div>
+        </div>
+        <div class="plot-cell" id="cell-mlp">
+          <h3>Flexible model <span id="tip-mlp"></span></h3>
+          <div id="plot-mlp" class="plot"></div>
+        </div>
+      </div>
+      <p id="map-note" role="status" hidden></p>
+      <ul id="legend"></ul>
+    </div>
+
+    <aside id="hero-risk">
+      <div id="verdict">
+        <div id="verdict-who" class="sub"></div>
+        <div id="verdict-headline"></div>
+        <div id="verdict-models"></div>
+      </div>
+      <section id="compare" aria-labelledby="compare-h">
+        <h2 id="compare-h">How you compare <span id="compare-tip"></span></h2>
+        <ul id="compare-list"></ul>
+        <button type="button" id="compare-more" class="link-btn" hidden></button>
+      </section>
+    </aside>
+  </section>
+
+  <section id="recommend">
+    <h2>What would change it <span id="reco-tip"></span></h2>
+    <p id="reco-note" class="sub"></p>
+    <div id="reco-lists"></div>
+  </section>
+
+  <details id="changes">
+    <summary>Every value, before and after <span id="changes-tip"></span></summary>
+    <div id="changes-table"></div>
+    <details id="changes-chart-details">
+      <summary>Size of each change (chart)</summary>
+      <div id="plot-delta"></div>
+      <p id="delta-caption" class="sub"></p>
+    </details>
+  </details>
+
+  <details id="you-details">
+    <summary>Enter your numbers</summary>
+    <p class="sub">Blanks use typical values. Nothing is stored unless you save.</p>
+    <div id="saved-list" hidden>
+      <h3>Your saves</h3>
+      <ul id="saved-items"></ul>
+    </div>
+    <form id="you-form" novalidate>
+      <div id="you-fields"></div>
+      <p id="you-buttons">
+        <button type="submit">Show where I stand</button>
+        <button type="button" id="you-save">Sign in to save</button>
+        <button type="button" id="you-typical">Fill typical values</button>
+        <button type="button" id="you-clear">Clear</button>
+      </p>
+      <p id="save-msg" class="sub" role="status" aria-live="polite"></p>
+    </form>
+    <section id="save-panel" hidden aria-labelledby="save-panel-h">
+      <h3 id="save-panel-h">Save values</h3>
+      <p class="sub">Pick what to keep.</p>
+      <div id="save-choices"></div>
+      <p id="save-choice-tools">
+        <button type="button" id="save-all">All</button>
+        <button type="button" id="save-none">None</button>
+      </p>
+      <label id="save-name-row">Name
+        <input id="save-name" maxlength="60" placeholder="e.g. Before my diet"></label>
+      <p id="save-panel-buttons">
+        <button type="button" id="save-confirm">Save</button>
+        <button type="button" id="save-cancel">Cancel</button>
+      </p>
+    </section>
+  </details>
+
+  <details id="expert">
+    <summary>Details for experts</summary>
+    <p class="sub" id="lens-note"></p>
+
+    <h3>Distance to the other side</h3>
+    <table id="dist">
+      <tr><th>change</th><th>simple</th><th>flexible</th></tr>
+      <tr><td>Quick (this model only)</td><td id="d-std-lin">—</td><td id="d-std-mlp">—</td></tr>
+      <tr><td>Safe (every good model)</td><td id="d-ell-lin">—</td><td id="d-ell-mlp">—</td></tr>
+    </table>
+
+    <h3>Raw metrics</h3>
+    <pre id="metrics">—</pre>
+
+    <details id="feat-details">
+      <summary>This person’s values</summary>
+      <div id="detail"></div>
+    </details>
+  </details>
+
+  <script src="/common.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>

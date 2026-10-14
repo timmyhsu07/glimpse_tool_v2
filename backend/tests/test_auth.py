@@ -40,7 +40,7 @@ class AuthTests(unittest.TestCase):
         if PG:
             os.environ["DATABASE_URL"] = PG
             with db.connect() as conn, conn.transaction():
-                for t in ("saved_values", "sessions", "login_failures", "users"):
+                for t in ("saved_values", "sessions", "login_failures", "password_resets", "users"):
                     conn.execute(f"DELETE FROM {t}")
         else:
             os.environ["GLIMPSE_DB"] = os.path.join(self.tmp.name, "test.db")

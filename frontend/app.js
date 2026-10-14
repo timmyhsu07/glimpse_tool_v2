@@ -13,6 +13,7 @@ const FIELD_SCALE = [
   [0.75, "#ffccff"], [1.0, "#ffaaff"],
 ]; //  
 
+const G = window.GLIMPSE;
 const state = { dataset: "pima", query: null, custom: null, point: null };
 
 const el = (id) => document.getElementById(id);
@@ -27,7 +28,11 @@ let savedEntries = [];
 let panelItems = [];
 const PENDING_KEY = "glimpse-pending-save";
 const VIEW_KEY = "glimpse-map-view";
+const GRAPH_KEY = "glimpse-old-graph";
+const DISPUTED_SHARE = 0.15;      // "most disputed" = this share with the widest ranges
 let mapView = "both";
+let oldGraph = false;             // false = density map (default), true = the dot map
+let showDisputed = false;
 
 const pct = (v) => (v * 100).toFixed(0) + "%";
 const f3 = (v) => (v == null ? "  n/a" : v.toFixed(3));
@@ -44,9 +49,7 @@ const ordinal = (n) => {
   return n + (s[(v - 20) % 10] || s[v] || s[0]);
 };
 
-const THEME_KEY = "glimpse-theme";
-const isDark = () =>
-  document.documentElement.getAttribute("data-theme") === "dark";
+const isDark = () => G.isDark();
 
 function themeColors() {
   return isDark()
@@ -56,24 +59,9 @@ function themeColors() {
         legendBg: "rgba(255,255,255,0.75)", legendBorder: "#cccccc", zero: "#888888" };
 }
 
-function applyTheme(t) {
-  document.documentElement.setAttribute("data-theme", t);
-  try { localStorage.setItem(THEME_KEY, t); } catch (e) {}
-  const btn = el("theme-toggle");
-  if (btn) btn.textContent = t === "dark" ? "☀ Light" : "☾ Dark";
+document.addEventListener("glimpse-theme", () => {
   if (plotsReady && lastScene) redrawPlots(lastScene);
-}
-
-function initTheme() {
-  let t = null;
-  try {
-    const q = new URLSearchParams(location.search).get("theme");
-    t = (q === "dark" || q === "light") ? q : localStorage.getItem(THEME_KEY);
-  } catch (e) {}
-  if (t !== "dark" && t !== "light")
-    t = matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
-  applyTheme(t);
-}
+});
 
 function polyTraces(lines, color, width, opacity, name, showlegend) {
   const traces = lines.map((ln) => ({
@@ -92,7 +80,7 @@ function markerTrace(pt, color, name, symbol, size) {
     marker: { size, color, symbol, opacity: 0.85,
               line: { color: "#000", width: 0.7 } },
     name, showlegend: false,
-    hovertemplate: `${name}<br>cost %{text}<extra></extra>`, text: [pt.distance],
+    hovertemplate: `${name}<extra></extra>`,
   };
 }
 
@@ -107,39 +95,26 @@ function buildPanelTraces(scene, which) {
     type: "heatmap", x: f.x, y: f.y, z: f.z,
     zmin: 0, zmax: 1, colorscale: FIELD_SCALE, zsmooth: "best",
     opacity: 0.9, hoverinfo: "none", showscale: which === colorbarPanel(),
-    colorbar: { title: { text: "P(bad)", side: "right", font: { color: tc.font } },
+    colorbar: { title: { text: `chance of ${scene.class_names[1]}`, side: "right",
+                         font: { color: tc.font } },
                 tickfont: { color: tc.font },
                 thickness: 12, len: 0.9, x: 1.02 },
   });
 
   traces.push(...polyTraces(panel.fan, COLORS.fan, 1, 0.14,
-                            "equally-good models", legend));
+                            "other good models", legend));
 
-  const groups = [
-    { c: 0, color: COLORS.good, label: scene.class_names[0] },
-    { c: 1, color: COLORS.bad, label: scene.class_names[1] },
-  ];
-  for (const g of groups) {
-    const sel = scene.points.filter((p) => p.outcome === g.c);
-    traces.push({
-      type: "scatter", mode: "markers",
-      x: sel.map((p) => p.x), y: sel.map((p) => p.y),
-      customdata: sel.map((p) => p.id), meta: "people",
-      marker: { size: 5, color: g.color, opacity: 0.55,
-                line: { color: "white", width: 0.3 } },
-      name: g.label, showlegend: legend,
-      hovertemplate: `person #%{customdata}<extra></extra>`,
-    });
-  }
+  if (oldGraph) traces.push(...dotTraces(scene, legend));
+  else traces.push(densityTrace(scene));
 
   traces.push(...polyTraces(panel.boundary, COLORS.boundary, 2.6, 1,
-                            "decision boundary", legend));
+                            "model's line", legend));
   traces.push(...polyTraces(panel.worst, COLORS.worst, 2.4, 0.95,
-                            "harshest equally-good model", legend));
+                            "strictest good model", legend));
 
   const q = scene.query, cf = panel.cfs;
-  const qName = q.from_map ? "the spot you picked"
-              : q.custom ? "you (entered)" : `person #${q.id}`;
+  const qName = q.from_map ? "Person at this spot"
+              : q.custom ? "You" : `Person #${q.id}`;
   traces.push({
     type: "scatter", mode: "markers", x: [q.x], y: [q.y],
     marker: { size: q.custom ? 15 : 12,
@@ -149,8 +124,61 @@ function buildPanelTraces(scene, which) {
     hovertemplate: `${qName}<extra></extra>`,
   });
   traces.push(markerTrace(cf.standard, COLORS.std, "quick change", "x", 9));
-  traces.push(markerTrace(cf.ellice, COLORS.ell, "robust change", "square", 9));
+  traces.push(markerTrace(cf.ellice, COLORS.ell, "safe change", "square", 9));
   return traces;
+}
+
+// The dot map ("old GLIMPSE graph"): one dot per person, with a hover card.
+function dotTraces(scene, legend) {
+  const kf = scene.key_features || [];
+  const [goodName, badName] = scene.class_names;
+  const card = (p) => {
+    const vals = kf.map((f, i) =>
+      `${G.esc(f.label)} ${fmtVal(p.v[i], f.integer)}${f.unit ? " " + G.esc(f.unit) : ""}`);
+    return `<b>${p.p >= 0.5 ? G.esc(badName) : G.esc(goodName)}</b> · ` +
+      `${pct(p.p)} chance of ${G.esc(badName)}<br>` +
+      `models say ${pct(p.lo)}–${pct(p.hi)}<br>${vals.join(" · ")}`;
+  };
+  const traces = [];
+  for (const [c, color, label] of [[0, COLORS.good, goodName], [1, COLORS.bad, badName]]) {
+    const sel = scene.points.filter((p) => p.outcome === c);
+    traces.push({
+      type: "scatter", mode: "markers",
+      x: sel.map((p) => p.x), y: sel.map((p) => p.y),
+      customdata: sel.map((p) => p.id), meta: "people", text: sel.map(card),
+      marker: { size: 5, color, opacity: 0.55, line: { color: "white", width: 0.3 } },
+      name: label, showlegend: legend,
+      hovertemplate: "%{text}<extra></extra>",
+    });
+  }
+  if (showDisputed) {
+    const sel = disputed(scene);
+    traces.push({
+      type: "scatter", mode: "markers", x: sel.map((p) => p.x), y: sel.map((p) => p.y),
+      marker: { size: 11, color: "rgba(0,0,0,0)",
+                line: { color: isDark() ? "#ffd166" : "#8a5a00", width: 1.6 } },
+      name: "most disputed", showlegend: false, hoverinfo: "skip",
+    });
+  }
+  return traces;
+}
+
+// The people the models disagree about most: the widest chance ranges.
+function disputed(scene) {
+  const pts = scene.points, n = Math.max(1, Math.round(pts.length * DISPUTED_SHARE));
+  return [...pts].sort((a, b) => (b.hi - b.lo) - (a.hi - a.lo)).slice(0, n);
+}
+
+// The density map: where people are, without showing any one of them.
+function densityTrace(scene) {
+  const ink = isDark() ? "230,232,240" : "20,24,40";
+  return {
+    type: "histogram2dcontour", x: scene.points.map((p) => p.x),
+    y: scene.points.map((p) => p.y), nbinsx: 28, nbinsy: 28, ncontours: 10,
+    colorscale: [[0, `rgba(${ink},0)`], [0.15, `rgba(${ink},0.05)`], [1, `rgba(${ink},0.55)`]],
+    contours: { coloring: "fill", showlines: false }, showscale: false,
+    hoverinfo: "skip", name: "people",
+  };
 }
 
 // Axis ranges. Both axes use constrain "domain", so Plotly keeps equal scale by
@@ -161,6 +189,10 @@ function viewRanges(div, scene, which) {
   if (scene.query.from_map && fl && fl.xaxis && div.dataset.view === scene.dataset)
     return [fl.xaxis.range.slice(), fl.yaxis.range.slice()];
   div.dataset.view = scene.dataset;
+  return defaultRanges(scene, which);
+}
+
+function defaultRanges(scene, which) {
   const q = scene.query, cf = scene.panels[which].cfs;
   const xs = [scene.bounds.x[0], scene.bounds.x[1], q.x, cf.ellice.x];
   const ys = [scene.bounds.y[0], scene.bounds.y[1], q.y, cf.ellice.y];
@@ -171,14 +203,13 @@ function viewRanges(div, scene, which) {
 function panelLayout(scene, which) {
   const q = scene.query, cf = scene.panels[which].cfs;
   const [xr, yr] = viewRanges(plotDivs[which], scene, which);
-  const axis = scene.lens.is_linear ? ["PC1", "PC2"] : ["z₁", "z₂"];
   const tc = themeColors();
   return {
     paper_bgcolor: tc.paper, plot_bgcolor: tc.plot, font: { color: tc.font },
-    margin: { l: 42, r: which === "mlp" ? 4 : 10, t: 6, b: 36 },
-    xaxis: { title: axis[0], range: xr, zeroline: false, constrain: "domain",
+    margin: { l: 8, r: which === "mlp" ? 4 : 10, t: 6, b: 8 },
+    xaxis: { showticklabels: false, ticks: "", range: xr, zeroline: false, constrain: "domain",
              color: tc.font },
-    yaxis: { title: axis[1], range: yr, zeroline: false, constrain: "domain",
+    yaxis: { showticklabels: false, ticks: "", range: yr, zeroline: false, constrain: "domain",
              scaleanchor: "x", scaleratio: 1, color: tc.font },
     legend: { x: 0.02, y: 0.98, bgcolor: tc.legendBg,
               font: { size: 10, color: tc.font }, bordercolor: tc.legendBorder,
@@ -212,11 +243,11 @@ function deltaTraces(scene) {
     customdata: rows.map((r) => [
       fmtVal(r.x0_real, r.integer), fmtVal(r[which].cf_real, r.integer),
       Math.round(r.pct_x0), Math.round(r[which].pct_cf),
-      r.immutable ? " · held fixed (immutable)" : "",
+      r.immutable ? " · can't change" : "",
     ]),
     hovertemplate:
-      "%{y}: %{customdata[0]} → %{customdata[1]} (real units)<br>" +
-      "percentile %{customdata[2]} → %{customdata[3]}%{customdata[4]}" +
+      "%{y}: %{customdata[0]} → %{customdata[1]}<br>" +
+      "rank %{customdata[2]}% → %{customdata[3]}%{customdata[4]}" +
       "<extra>" + name + "</extra>",
   });
   return [mk("linear", COLORS.deltaLin, "simple model"),
@@ -228,7 +259,7 @@ function deltaLayout() {
   return {
     paper_bgcolor: tc.paper, plot_bgcolor: tc.plot, font: { color: tc.font },
     margin: { l: 190, r: 20, t: 8, b: 40 }, barmode: "group",
-    xaxis: { title: "Δ = change − you  (standardized units)", color: tc.font,
+    xaxis: { title: "size of change (standardized)", color: tc.font,
              zeroline: true, zerolinecolor: tc.zero, zerolinewidth: 1.5 },
     yaxis: { automargin: true, color: tc.font },
     legend: { x: 0.99, y: 0.02, xanchor: "right",
@@ -244,43 +275,43 @@ function renderLensNote(scene) {
     `<span class="sub">Keeps who-is-near-whom about ` +
     `<b>${Math.round(q.trust * 100)}%</b> faithful` +
     `${L.is_linear ? " and is exactly reversible" : ""}.</span>`;
-  el("maps-sub").textContent =
-    "ECLIPSE view — a linear model’s boundary is an exact straight line here";
 }
 
 function renderLegend(scene) {
   const [g, b] = scene.class_names;
+  const people = oldGraph
+    ? `<li><span class="dot" style="background:${COLORS.good}"></span> ${G.esc(g)}` +
+      ` <span class="dot" style="background:${COLORS.bad}"></span> ${G.esc(b)}</li>`
+    : `<li><span class="sw" style="background:rgba(20,24,40,0.45)"></span> Many people</li>`;
   el("legend").innerHTML = [
-    `<li><span class="sw" style="background:#aaffaa"></span> good side` +
-      ` <span class="sw" style="background:#ffaaff"></span> bad side` +
-      ` <span class="sub">(background = the model’s P(${b}))</span></li>`,
-    `<li><span class="dot" style="background:${COLORS.good}"></span> ${g}` +
-      ` &nbsp;<span class="dot" style="background:${COLORS.bad}"></span> ${b}` +
-      ` <span class="sub">(each dot is a person)</span></li>`,
-    `<li><span class="sw line" style="background:${COLORS.boundary}"></span>` +
-      ` decision boundary</li>`,
-    `<li><span class="sw line" style="background:${COLORS.fan}"></span>` +
-      ` equally-good models (sampled “Rashomon” fan)</li>`,
-    `<li><span class="sw line" style="background:${COLORS.worst}"></span>` +
-      ` harshest equally-good model</li>`,
-    `<li>★ person, ✕ = quick change, ▪ = robust change</li>`,
+    `<li><span class="sw" style="background:#aaffaa"></span> ${G.esc(g)} side` +
+      ` <span class="sw" style="background:#ffaaff"></span> ${G.esc(b)} side</li>`,
+    people,
+    `<li><span class="sw line" style="background:${COLORS.boundary}"></span> Model’s line</li>`,
+    `<li><span class="sw line" style="background:${COLORS.fan}"></span> Other good models</li>`,
+    `<li><span class="sw line" style="background:${COLORS.worst}"></span> Strictest model</li>`,
+    `<li>★ You · ✕ Quick change · ▪ Safe change</li>`,
+    `<li>${G.tip("Background: the simple model’s chance of " + b + ". " +
+      "Line: where it flips. Other good models: models that fit the data about as well. " +
+      "Strictest: the one least on your side. Quick change: smallest change for this model. " +
+      "Safe change: smallest change that works for every good model.")}</li>`,
   ].join("");
 }
 
 function renderVerdict(scene) {
   const q = scene.query;
-  const who = q.from_map ? "The person at this spot" : q.custom ? "You" : `This person`;
+  el("verdict-who").textContent =
+    q.from_map ? "Person at this spot" : q.custom ? "You" : `Person #${q.id}`;
   const [goodName, badName] = scene.class_names;
   const lm = scene.panels.linear.metrics;
   const predName = lm.pred_bad ? badName : goodName;
   el("verdict").className = lm.pred_bad ? "bad" : "good";
 
-  const uncertain = lm.p_bad_best_x0 < 0.5 && lm.p_bad_worst_x0 > 0.5;
+  const close = lm.p_bad_best_x0 < 0.5 && lm.p_bad_worst_x0 > 0.5;
   el("verdict-headline").innerHTML =
-    `${who} would be predicted <b>${predName}</b>` +
-    (uncertain
-      ? ` — but it’s a close call: equally-good models disagree.`
-      : `.`);
+    `<span class="vhead">${G.esc(predName)}</span>` +
+    `<span class="badge ${close ? "close" : "clear"}">` +
+    `${close ? "⚠ Close call · models disagree" : "✓ Clear · models agree"}</span>`;
 
   el("verdict-models").innerHTML = ["linear", "mlp"].map((which) => {
     const m = scene.panels[which].metrics;
@@ -291,23 +322,56 @@ function renderVerdict(scene) {
     const side = m.pred_bad ? badName : goodName;
     return `<div class="vmodel ${m.pred_bad ? "bad" : "good"}">
       <div class="vlabel">${name}</div>
-      <div class="vpred">${side}</div>
-      <div class="vrange">chance of “${badName}”:
-        <b>${lo}–${hi}%</b> <span class="sub">(best guess ${erm}%)</span></div>
-      <div class="vbar"><span style="left:${lo}%;right:${100 - hi}%"></span>
-        <i style="left:${erm}%"></i></div>
-      <div class="sub vexpl">range = every model that fits the data equally well</div>
+      <div class="vpred">${G.esc(side)}</div>
+      <div class="vrange">${lo}–${hi}% chance of ${G.esc(badName)}
+        ${G.tip(`Bar: what every model that fits the data about as well says. ` +
+          `Tick: best guess, ${erm}%.`, "right")}</div>
+      <div class="vbar" role="img" aria-label="${lo} to ${hi} percent, best guess ${erm}">
+        <span style="left:${lo}%;right:${100 - hi}%"></span><i style="left:${erm}%"></i></div>
     </div>`;
   }).join("");
 }
+
+// You vs everyone: where each value sits among all people in the data.
+let compareAll = false;
+function renderCompare(scene) {
+  const rank = new Map((scene.importance || []).map((n, i) => [n, i]));
+  const rows = scene.deltas.filter((r) => !r.group)
+    .sort((a, b) => (rank.get(a.name) ?? 1e9) - (rank.get(b.name) ?? 1e9));
+  const shown = compareAll ? rows : rows.slice(0, 6);
+  const q = scene.query;
+  const who = q.custom || q.from_map ? "You" : "This person";
+  el("compare-h").firstChild.textContent = q.from_map ? "How this spot compares " :
+    q.custom ? "How you compare " : "How this person compares ";
+  el("compare-list").innerHTML = shown.map((r) => {
+    const pctl = Math.round(r.pct_x0);
+    const where = pctl >= 50 ? `higher than ${pctl}%` : `lower than ${100 - pctl}%`;
+    const unit = r.unit ? " " + G.esc(r.unit) : "";
+    return `<li class="cmp${r.immutable ? " cmp-fixed" : ""}">
+      <div class="cmp-top"><span class="cmp-name">${G.esc(r.label)}` +
+      `${r.immutable ? " " + G.LOCK : ""}${r.missing ? ' <span class="miss-mark" title="typical value used">✱</span>' : ""}</span>
+        <span class="cmp-val">${fmtVal(r.x0_real, r.integer)}${unit}</span></div>
+      <div class="cmp-bar" role="img" aria-label="${G.esc(r.label)}: ${where} of people">
+        <i style="left:${Math.min(98, Math.max(0, pctl))}%"></i></div>
+      <div class="cmp-txt sub">${where} of people</div></li>`;
+  }).join("");
+  const more = el("compare-more");
+  more.hidden = rows.length <= 6;
+  more.textContent = compareAll ? "Show fewer" : `Show all ${rows.length}`;
+  el("compare").dataset.who = who;
+}
+el("compare-more").addEventListener("click", () => {
+  compareAll = !compareAll;
+  if (lastScene) renderCompare(lastScene);
+});
 
 function renderRecommend(scene) {
   const [goodName, badName] = scene.class_names;
   const anyBad = scene.panels.linear.metrics.pred_bad ||
                  scene.panels.mlp.metrics.pred_bad;
   const imm = scene.deltas.filter((r) => r.immutable).map((r) => r.label);
-  el("reco-note").textContent = (anyBad && imm.length)
-    ? `Held fixed because they can’t realistically be changed: ${imm.join(", ")}.`
+  el("reco-note").innerHTML = (anyBad && imm.length)
+    ? `${G.LOCK} Can’t change: ${imm.map(G.esc).join(", ")}`
     : "";
 
   el("reco-lists").innerHTML = ["linear", "mlp"].map((which) => {
@@ -315,8 +379,7 @@ function renderRecommend(scene) {
     const name = which === "linear" ? "Simple model" : "Flexible model";
     if (!m.pred_bad) {
       return `<div class="reco-col"><div class="reco-h">${name}</div>
-        <p class="reco-ok">Already on the “${goodName}” side — nothing needs
-        to change.</p></div>`;
+        <p class="reco-ok">✓ Already ${G.esc(goodName)}. Nothing to change.</p></div>`;
     }
     // Show meaningful mutable changes, with at least three when available.
     const magOf = (it) => it.kind === "group"
@@ -331,25 +394,21 @@ function renderRecommend(scene) {
         const p = it.per[which];
         if (!p.changed) return "";
         return `<li class="up"><span class="arrow">→</span>
-          <b>Set ${esc(it.label)} to “${esc(p.cat)}”</b>
-          <span class="sub">(currently “${esc(it.youCat)}”)</span></li>`;
+          <b>${esc(it.label)}</b> ${esc(it.youCat)} → <b>${esc(p.cat)}</b></li>`;
       }
       const r = it.r, d = r[which];
       const up = d.delta_real > 0;
       const unit = r.unit ? " " + r.unit : "";
       return `<li class="${up ? "up" : "down"}">
-        <span class="arrow">${up ? "▲" : "▼"}</span>
-        <b>${up ? "Raise" : "Lower"} ${r.label}</b>
-        from ${fmtVal(r.x0_real, r.integer)} to
+        <span class="arrow" aria-label="${up ? "raise" : "lower"}">${up ? "▲" : "▼"}</span>
+        <b>${r.label}</b> ${fmtVal(r.x0_real, r.integer)} →
         <b>${fmtVal(d.cf_real, r.integer)}${unit}</b>
-        <span class="sub">(${ordinal(Math.round(r.pct_x0))} →
-        ${ordinal(Math.round(d.pct_cf))} percentile)</span></li>`;
+        <span class="sub">rank ${Math.round(r.pct_x0)}% → ${Math.round(d.pct_cf)}%</span></li>`;
     }).filter(Boolean).join("");
     return `<div class="reco-col">
-      <div class="reco-h">${name}
-        <span class="sub">smallest robust change to reach “${goodName}”</span></div>
+      <div class="reco-h">${name}</div>
       <ul class="reco">${items ||
-        "<li class='sub'>no single-feature change is enough on its own</li>"}</ul>
+        "<li class='sub'>No single change is enough.</li>"}</ul>
     </div>`;
   }).join("");
 }
@@ -393,14 +452,12 @@ function groupRow(label, members) {
 }
 
 function renderChanges(scene) {
-  el("changes-good").textContent = scene.class_names[0];
-
   const rows = displayRows(scene).sort((a, b) => b.key - a.key);
 
   const plainCell = (r, which) => {
-    if (r.immutable) return `<td class="fixed">held fixed</td>`;
+    if (r.immutable) return `<td class="fixed">${G.LOCK} can’t change</td>`;
     const d = r[which];
-    if (Math.abs(d.delta_std) <= 0.02) return `<td class="same">no change</td>`;
+    if (Math.abs(d.delta_std) <= 0.02) return `<td class="same">same</td>`;
     const up = d.delta_real > 0, unit = r.unit ? " " + r.unit : "";
     return `<td class="${up ? "up" : "down"}">` +
       `<span class="arrow">${up ? "▲" : "▼"}</span>` +
@@ -408,22 +465,22 @@ function renderChanges(scene) {
       ` <span class="sub">(${up ? "+" : ""}${fmtVal(d.delta_real, r.integer)})</span></td>`;
   };
   const groupCell = (g, which) => {
-    if (g.immutable) return `<td class="fixed">held fixed</td>`;
+    if (g.immutable) return `<td class="fixed">${G.LOCK} can’t change</td>`;
     const p = g.per[which];
-    if (!p.changed) return `<td class="same">no change</td>`;
+    if (!p.changed) return `<td class="same">same</td>`;
     return `<td class="up"><span class="arrow">→</span>${esc(p.cat)}</td>`;
   };
 
   const trs = rows.map((it) => {
     if (it.kind === "group") {
-      const miss = it.missing ? ' <span class="miss-mark" title="imputed">✱</span>' : "";
+      const miss = it.missing ? ' <span class="miss-mark" title="typical value used">✱</span>' : "";
       return `<tr class="${it.immutable ? "immrow" : ""}">` +
         `<td class="fname-cell">${esc(it.label)}${miss}</td>` +
         `<td class="youval">${esc(it.youCat)}</td>` +
         `${groupCell(it, "linear")}${groupCell(it, "mlp")}</tr>`;
     }
     const r = it.r;
-    const miss = r.missing ? ' <span class="miss-mark" title="imputed">✱</span>' : "";
+    const miss = r.missing ? ' <span class="miss-mark" title="typical value used">✱</span>' : "";
     const unit = r.unit ? ` <span class="sub">(${r.unit})</span>` : "";
     return `<tr class="${r.immutable ? "immrow" : ""}">` +
       `<td class="fname-cell">${r.label}${miss}${unit}</td>` +
@@ -433,8 +490,8 @@ function renderChanges(scene) {
 
   el("changes-table").innerHTML =
     `<table class="chg"><thead><tr>` +
-    `<th>Feature</th><th>You</th>` +
-    `<th>Simple model →</th><th>Flexible model →</th>` +
+    `<th>Value</th><th>Now</th>` +
+    `<th>After (simple)</th><th>After (flexible)</th>` +
     `</tr></thead><tbody>${trs}</tbody></table>`;
 }
 
@@ -495,23 +552,22 @@ function formGroups(features) {
 function fieldHTML(f) {
   const unit = f.unit ? ` <span class="unit">(${f.unit})</span>` : "";
   const imm = f.immutable
-    ? ` <span class="imm-tag" title="won’t be changed by recommendations">fixed</span>`
+    ? ` <span class="imm-tag" title="Can’t change, so never recommended">${G.LOCK}</span>`
     : "";
-  const hint = f.desc ? `<span class="fhint">${f.desc}</span>` : "";
+  const hint = f.desc ? " " + G.tip(f.desc) : "";
   return `<label class="you-row" data-min="${f.min}" data-max="${f.max}"
                  data-p5="${f.p5}" data-p95="${f.p95}"
                  data-median="${f.median}" data-int="${f.integer}">
-    <span class="fname">${f.label}${unit}${imm}</span>
-    ${hint}
+    <span class="fname">${f.label}${unit}${imm}${hint}</span>
     <input type="number" step="${f.integer ? 1 : "any"}" name="${f.name}"
-           placeholder="typical ${fmtVal(f.median, f.integer)}">
+           placeholder="${fmtVal(f.median, f.integer)} typical">
     <span class="fwarn"></span>
   </label>`;
 }
 
 function groupHTML(g) {
   const imm = g.members.some((m) => m.immutable)
-    ? ` <span class="imm-tag" title="won’t be changed by recommendations">fixed</span>`
+    ? ` <span class="imm-tag" title="Can’t change, so never recommended">${G.LOCK}</span>`
     : "";
   const hasNone = g.baselineShare > 0.02;
   let modal = "", best = g.baselineShare;
@@ -595,10 +651,9 @@ function updatePanel(scene) {
   renderLensNote(scene);
   renderLegend(scene);
   renderVerdict(scene);
+  renderCompare(scene);
   renderRecommend(scene);
   renderChanges(scene);
-
-  el("sub-linear").textContent = "straight-line boundary";
 
   el("d-std-lin").textContent = scene.panels.linear.cfs.standard.distance.toFixed(3);
   el("d-ell-lin").textContent = scene.panels.linear.cfs.ellice.distance.toFixed(3);
@@ -615,9 +670,7 @@ function updatePanel(scene) {
   el("metrics").textContent = metricsText(scene);
   const q = scene.query;
   el("delta-caption").textContent =
-    "grey bars = immutable features (held fixed in the search); " +
-    (q.custom ? "✱ = left blank in the form (imputed)."
-              : "✱ = missing in the data (imputed).");
+    "Grey = can’t change · ✱ = " + (q.custom ? "left blank, typical value used" : "missing, typical value used");
 }
 
 function redrawPlots(scene) {
@@ -635,8 +688,7 @@ async function refresh() {
 
 async function drawScene() {
   Object.values(plotDivs).forEach((d) => d.classList.add("loading"));
-  el("busy").textContent =
-    "  computing… (first use of a dataset fits its map: up to ~1 min)";
+  el("busy").textContent = "Loading… the first time can take up to a minute.";
 
   let resp;
   if (state.point) {
@@ -658,7 +710,7 @@ async function drawScene() {
   const scene = await resp.json();
   Object.values(plotDivs).forEach((d) => d.classList.remove("loading"));
   el("busy").textContent = "";
-  if (scene.error) { el("lens-note").textContent = "error: " + scene.error; return; }
+  if (scene.error) { el("busy").textContent = "Something went wrong: " + scene.error; return; }
   lastScene = scene;
 
   if (scene.decoded) {
@@ -778,13 +830,11 @@ function showMapNote(scene) {
   const note = el("map-note"), d = scene.decoded;
   note.hidden = !d;
   if (!d) return;
-  let text = "Showing the person the map places exactly at the spot you " +
-             "clicked. Their values are filled in below.";
-  if (d.outside.length)
-    text += ` ${d.outside.length === 1 ? "One value falls" : d.outside.length + " values fall"}` +
-            ` outside anything in the data (${d.outside.join(", ")}), so this` +
-            " spot is beyond the people the models learned from.";
-  note.textContent = text;
+  const m = scene.panels.linear.metrics, [goodName, badName] = scene.class_names;
+  note.innerHTML = `<b>Estimated person at this spot:</b> ` +
+    `${G.esc(m.pred_bad ? badName : goodName)} · ${pct(m.p_bad_erm_x0)} chance of ${G.esc(badName)}. ` +
+    `<span class="sub">Their numbers are filled in below.</span>` +
+    (d.outside.length ? `<br><span class="warn">Outside the data: ${d.outside.map(G.esc).join(", ")}</span>` : "");
 }
 
 el("dataset").addEventListener("change", async (e) => {
@@ -810,6 +860,11 @@ el("you-typical").addEventListener("click", () => {
     sel.value = sel.dataset.modal || "";
 });
 el("you-clear").addEventListener("click", () => {
+  for (const inp of el("you-fields").querySelectorAll("input")) {
+    inp.value = "";
+    inp.dispatchEvent(new Event("input"));
+  }
+  for (const sel of el("you-fields").querySelectorAll("select.you-group")) sel.value = "";
   state.custom = null;
   state.point = null;
   refresh();
@@ -953,7 +1008,7 @@ function goSignInToSave(values) {
     sessionStorage.setItem(PENDING_KEY, JSON.stringify({ dataset: state.dataset, values }));
   } catch (e) {}
   location.href = "/login.html?reason=save&next=" +
-    encodeURIComponent("/?dataset=" + state.dataset);
+    encodeURIComponent("/app.html?dataset=" + state.dataset);
 }
 
 function takePending() {
@@ -997,23 +1052,10 @@ el("saved-items").addEventListener("click", async (e) => {
   await refreshSaved();
 });
 
-initTheme();
-el("theme-toggle").addEventListener("click", () =>
-  applyTheme(isDark() ? "light" : "dark"));
 
 async function showAccount() {
-  try {
-    const me = await (await fetch("/api/me", { credentials: "same-origin" })).json();
-    currentUser = me.user || null;
-    setSaveButton();
-    if (!me.user) return;
-    const link = el("account-link");
-    link.textContent = "";
-    const who = document.createElement("span");
-    who.className = "sub";
-    who.textContent = me.user.email;
-    link.append(who, "Account");
-  } catch (e) {}
+  currentUser = await G.me;
+  setSaveButton();
 }
 
 async function init() {
@@ -1038,12 +1080,71 @@ async function init() {
 
   const meta = await (await fetch("/api/datasets")).json();
   el("dataset").innerHTML = meta.datasets
-    .map((d) => `<option value="${d.key}">${d.label}</option>`).join("");
+    .map((d) => `<option value="${G.esc(d.key)}">${G.esc(G.topicName(d.key, d.label))}</option>`)
+    .join("");
   el("dataset").value = state.dataset;
 
   await refresh();
   await refreshSaved();
   if (pending) openSavePanel();
+  else if (qs.get("enter") === "1") {
+    el("you-details").open = true;
+    el("you-details").scrollIntoView({ behavior: "smooth", block: "start" });
+    const first = el("you-fields").querySelector("input, select");
+    if (first) first.focus({ preventScroll: true });
+  }
 }
+
+// ---- map tools: graph style, find me, reset zoom, most disputed
+
+el("map-tip").innerHTML = G.tip("Click any spot to see the person who would be there. " +
+  "Drag to zoom in, double-click to zoom out.");
+el("tip-linear").innerHTML = G.tip("A straight-line model. Easy to explain.");
+el("tip-mlp").innerHTML = G.tip("A small neural network. Can bend around the data.");
+el("compare-tip").innerHTML = G.tip("Where each number sits among everyone in the data. " +
+  "Most important first. A lock means it can’t be changed.", "right");
+el("reco-tip").innerHTML = G.tip("The smallest changes that flip the result for every " +
+  "model that fits the data about as well. Things you can’t change are never suggested.");
+el("changes-tip").innerHTML = G.tip("Now: your numbers. After: the closest person every " +
+  "good model would put on the other side.");
+
+function setGraphStyle(old, redraw) {
+  oldGraph = old;
+  el("old-graph").checked = old;
+  el("disputed-switch").hidden = !old;
+  try { localStorage.setItem(GRAPH_KEY, old ? "1" : "0"); } catch (e) {}
+  if (redraw && plotsReady && lastScene) {
+    redrawPlots(lastScene);
+    renderLegend(lastScene);
+  }
+}
+el("old-graph").addEventListener("change", (e) => setGraphStyle(e.target.checked, true));
+el("show-disputed").addEventListener("change", (e) => {
+  showDisputed = e.target.checked;
+  if (plotsReady && lastScene) redrawPlots(lastScene);
+});
+try { setGraphStyle(localStorage.getItem(GRAPH_KEY) === "1", false); }
+catch (e) { setGraphStyle(false, false); }
+
+function visiblePanels() {
+  return ["linear", "mlp"].filter((w) => !el("cell-" + w).hidden);
+}
+el("reset-zoom").addEventListener("click", () => {
+  if (!lastScene) return;
+  for (const which of visiblePanels()) {
+    const [xr, yr] = defaultRanges(lastScene, which);
+    Plotly.relayout(plotDivs[which], { "xaxis.range": xr, "yaxis.range": yr });
+  }
+});
+el("find-me").addEventListener("click", () => {
+  if (!lastScene) return;
+  const q = lastScene.query;
+  for (const which of visiblePanels()) {
+    const fl = plotDivs[which]._fullLayout;
+    const wx = fl.xaxis.range[1] - fl.xaxis.range[0], wy = fl.yaxis.range[1] - fl.yaxis.range[0];
+    Plotly.relayout(plotDivs[which], { "xaxis.range": [q.x - wx / 2, q.x + wx / 2],
+                                       "yaxis.range": [q.y - wy / 2, q.y + wy / 2] });
+  }
+});
 
 init();

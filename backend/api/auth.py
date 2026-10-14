@@ -1,9 +1,10 @@
 """Email + password accounts, sessions, and saved values.
 
 No email verification: registering just records the account. Passwords are
-kept only as salted scrypt hashes, and sessions as SHA-256 digests of the
-cookie token, so the database alone cannot be used to sign in. Repeated failed
-sign-ins are throttled per email and per network address.
+kept only as salted scrypt hashes, and sessions and reset links as SHA-256
+digests of their tokens, so the database alone cannot be used to sign in.
+Repeated failed sign-ins and reset requests are throttled per email and per
+network address.
 
 Storage is SQLite locally and Postgres when DATABASE_URL is set; see db.py.
 """
@@ -18,6 +19,7 @@ from http.cookies import SimpleCookie
 import re
 
 import db
+import mailer
 
 COOKIE = "glimpse_session"
 SESSION_DAYS = 30
@@ -29,6 +31,10 @@ _SCRYPT = {"n": 2 ** 14, "r": 8, "p": 1}
 FAIL_WINDOW = 15 * 60          # seconds
 FAIL_LIMIT_EMAIL = 10          # failed sign-ins per email per window
 FAIL_LIMIT_IP = 50             # failed sign-ins per address per window
+
+RESET_MINUTES = 60
+RESET_LIMIT_EMAIL = 3          # reset emails per address per hour
+RESET_LIMIT_IP = 20            # reset requests per network address per hour
 
 MAX_FIELDS = 500
 MAX_SAVES = 50                 # named saves per user per dataset
@@ -116,10 +122,9 @@ def register(data, secure=False):
     email, password = _credentials(data)
     if len(email) > 254 or not _EMAIL.match(email):
         return 400, {"error": "Enter a valid email address."}, {}
-    if len(password) < MIN_PASSWORD:
-        return 400, {"error": f"Use a password of at least {MIN_PASSWORD} characters."}, {}
-    if len(password) > MAX_PASSWORD:
-        return 400, {"error": "That password is too long."}, {}
+    problem = _new_password_problem(password)
+    if problem:
+        return 400, {"error": problem}, {}
     pw_hash = hash_password(password)
     with db.connect() as conn, conn.transaction():
         row = conn.one("INSERT INTO users (email, password_hash, created_at) "
@@ -169,6 +174,153 @@ def current_user(token):
                        "WHERE s.token_hash = ? AND s.expires_at > ?",
                        (_token_hash(token), int(time.time())))
     return {"email": row[0]} if row else None
+
+
+def _new_password_problem(password):
+    if len(password) < MIN_PASSWORD:
+        return f"Use a password of at least {MIN_PASSWORD} characters."
+    if len(password) > MAX_PASSWORD:
+        return "That password is too long."
+    return None
+
+
+def _throttled(conn, keys_limits, window):
+    since = int(time.time()) - window
+    return any(conn.one("SELECT COUNT(*) FROM login_failures WHERE key = ? AND at > ?",
+                        (k, since))[0] >= limit for k, limit in keys_limits)
+
+
+def _note_attempt(conn, keys, window):
+    now = int(time.time())
+    conn.execute("DELETE FROM login_failures WHERE at < ?", (now - max(window, FAIL_WINDOW),))
+    for k in keys:
+        conn.execute("INSERT INTO login_failures (key, at) VALUES (?, ?)", (k, now))
+
+
+# ---- my account: details, change password, delete account
+
+def account(token):
+    with db.connect() as conn:
+        uid = _user_id(conn, token)
+        if uid is None:
+            return 401, {"error": "Sign in to see your account."}, {}
+        email, created = conn.one("SELECT email, created_at FROM users WHERE id = ?", (uid,))
+        rows = conn.all("SELECT dataset, COUNT(*) FROM saved_values WHERE user_id = ? "
+                        "GROUP BY dataset", (uid,))
+    return 200, {"user": {"email": email, "created_at": created,
+                          "saves": {d: n for d, n in rows}}}, {}
+
+
+def _check_own_password(conn, uid, password):
+    """(ok, error response). Wrong guesses count toward the sign-in throttle."""
+    email, stored = conn.one("SELECT email, password_hash FROM users WHERE id = ?", (uid,))
+    key = f"email:{email}"
+    if _throttled(conn, [(key, FAIL_LIMIT_EMAIL)], FAIL_WINDOW):
+        return False, (429, {"error": "Too many attempts. Wait a few minutes and try again."}, {})
+    if not verify_password(password, stored):
+        with conn.transaction():
+            _note_attempt(conn, [key], FAIL_WINDOW)
+        return False, (401, {"error": "That password isn't right."}, {})
+    return True, None
+
+
+def change_password(token, data):
+    current = data.get("current") if isinstance(data.get("current"), str) else ""
+    new = data.get("new") if isinstance(data.get("new"), str) else ""
+    problem = _new_password_problem(new)
+    if problem:
+        return 400, {"error": problem}, {}
+    with db.connect() as conn:
+        uid = _user_id(conn, token)
+        if uid is None:
+            return 401, {"error": "Sign in to change your password."}, {}
+        ok, err = _check_own_password(conn, uid, current)
+        if not ok:
+            return err
+        with conn.transaction():
+            conn.execute("UPDATE users SET password_hash = ? WHERE id = ?",
+                         (hash_password(new), uid))
+            # Sign out everywhere else; this browser stays signed in.
+            conn.execute("DELETE FROM sessions WHERE user_id = ? AND token_hash <> ?",
+                         (uid, _token_hash(token)))
+            conn.execute("DELETE FROM password_resets WHERE user_id = ?", (uid,))
+    return 200, {"ok": True}, {}
+
+
+def delete_account(token, data, secure=False):
+    password = data.get("password") if isinstance(data.get("password"), str) else ""
+    with db.connect() as conn:
+        uid = _user_id(conn, token)
+        if uid is None:
+            return 401, {"error": "Sign in to delete your account."}, {}
+        ok, err = _check_own_password(conn, uid, password)
+        if not ok:
+            return err
+        with conn.transaction():
+            # Sessions, saves and reset links go with it (ON DELETE CASCADE).
+            conn.execute("DELETE FROM saved_values WHERE user_id = ?", (uid,))
+            conn.execute("DELETE FROM sessions WHERE user_id = ?", (uid,))
+            conn.execute("DELETE FROM password_resets WHERE user_id = ?", (uid,))
+            conn.execute("DELETE FROM users WHERE id = ?", (uid,))
+    return 200, {"deleted": True}, {"Set-Cookie": _cookie("", secure, 0)}
+
+
+# ---- forgot password: a one-time link by email
+
+RESET_SENT = "If that email has an account, a reset link is on its way."
+
+
+def request_reset(data, base_url, ip=""):
+    if not mailer.available():
+        return 503, {"error": "Password reset by email isn't set up yet."}, {}
+    email = str(data.get("email") or "").strip().lower()
+    if len(email) > 254 or not _EMAIL.match(email):
+        return 400, {"error": "Enter a valid email address."}, {}
+    keys = [(f"reset:{email}", RESET_LIMIT_EMAIL)] + ([(f"reset-ip:{ip}", RESET_LIMIT_IP)] if ip else [])
+    with db.connect() as conn:
+        if _throttled(conn, keys, 3600):
+            return 429, {"error": "Too many reset requests. Try again in an hour."}, {}
+        row = conn.one("SELECT id FROM users WHERE email = ?", (email,))
+        token = secrets.token_urlsafe(32)
+        with conn.transaction():
+            _note_attempt(conn, [k for k, _ in keys], 3600)
+            if row:
+                now = int(time.time())
+                conn.execute("DELETE FROM password_resets WHERE user_id = ? OR expires_at < ?",
+                             (row[0], now))
+                conn.execute("INSERT INTO password_resets (token_hash, user_id, expires_at) "
+                             "VALUES (?, ?, ?)",
+                             (_token_hash(token), row[0], now + RESET_MINUTES * 60))
+    if row:
+        try:
+            mailer.send_reset(email, f"{base_url}/login.html#reset={token}")
+        except Exception:
+            return 502, {"error": "Couldn't send the email. Try again in a minute."}, {}
+    # Same answer either way, so this can't be used to find out who has an account.
+    return 200, {"message": RESET_SENT}, {}
+
+
+def reset_password(data, secure=False):
+    token = data.get("token") if isinstance(data.get("token"), str) else ""
+    new = data.get("password") if isinstance(data.get("password"), str) else ""
+    problem = _new_password_problem(new)
+    if problem:
+        return 400, {"error": problem}, {}
+    with db.connect() as conn, conn.transaction():
+        row = conn.one("SELECT r.user_id, u.email FROM password_resets r "
+                       "JOIN users u ON u.id = r.user_id "
+                       "WHERE r.token_hash = ? AND r.expires_at > ?",
+                       (_token_hash(token), int(time.time())))
+        if row is None:
+            return 400, {"error": "This reset link has expired or was already used. "
+                                  "Ask for a new one."}, {}
+        uid, email = row
+        conn.execute("UPDATE users SET password_hash = ? WHERE id = ?", (hash_password(new), uid))
+        conn.execute("DELETE FROM password_resets WHERE user_id = ?", (uid,))
+        conn.execute("DELETE FROM sessions WHERE user_id = ?", (uid,))
+        conn.execute("DELETE FROM login_failures WHERE key = ?", (f"email:{email}",))
+        headers = _start_session(conn, uid, secure)
+    return 200, {"user": {"email": email}}, headers
 
 
 # ---- saved values: named, per user and dataset, signed-in users only
