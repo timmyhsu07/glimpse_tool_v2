@@ -53,10 +53,10 @@ class SaveListTests(AuthTests):
         ck = session_cookie(self.register()[2])
         ids = [call("POST", "/api/saved", {"dataset": ds, "name": n, "values": {"x": 1}},
                     cookie=ck)[1]["saved"]["id"] for ds, n in (("pima", "a"), ("pima", "b"),
-                                                               ("heloc", "a"))]
+                                                               ("taiwan", "a"))]
         code, obj, _ = call("GET", "/api/saved", cookie=ck)
         self.assertEqual(code, 200)
-        self.assertEqual(sorted(e["dataset"] for e in obj["saved"]), ["heloc", "pima", "pima"])
+        self.assertEqual(sorted(e["dataset"] for e in obj["saved"]), ["pima", "pima", "taiwan"])
         self.assertEqual(call("POST", "/api/saved/rename", {"id": ids[0], "name": "b"},
                               cookie=ck)[0], 409)
         code, obj, _ = call("POST", "/api/saved/rename", {"id": ids[0], "name": "  May  "},
@@ -75,14 +75,14 @@ class SafeChangeTests(unittest.TestCase):
     """A "safe change" is only offered when every good model is convinced."""
 
     def test_safe_ok_matches_the_worst_case_margin(self):
-        for ds in ("pima", "heloc", "cancer"):
+        for ds in ("pima", "taiwan", "cancer"):
             _, scene = index.route("GET", "/api/scene", f"dataset={ds}", None, {})
             for key in ("linear", "mlp"):
                 m = scene["panels"][key]["metrics"]
                 self.assertEqual(m["safe_ok"], m["robust_margin_cf"] >= 0.1 - 1e-3, (ds, key))
 
     def test_suggested_values_stay_within_what_the_data_has_seen(self):
-        for ds in ("pima", "heloc", "cancer"):
+        for ds in ("pima", "taiwan", "cancer"):
             _, out = people({"dataset": ds, "people": [{}]})
             feats = {f["name"]: f for f in out["features"]}
             _, scene = index.route("GET", "/api/scene", f"dataset={ds}", None, {})
@@ -100,11 +100,19 @@ class SafeChangeTests(unittest.TestCase):
             self.assertIn("quick_ok", m)
             self.assertTrue(m["quick_ok"])
 
-    def test_credit_has_no_safe_change_with_the_locked_values(self):
-        _, scene = index.route("GET", "/api/scene", "dataset=heloc", None, {})
-        self.assertFalse(scene["panels"]["linear"]["metrics"]["safe_ok"])
-        _, scene = index.route("GET", "/api/scene", "dataset=pima", None, {})
-        self.assertTrue(scene["panels"]["linear"]["metrics"]["safe_ok"])
+    def test_each_change_says_how_much_of_it_the_map_shows(self):
+        _, scene = index.route("GET", "/api/scene", "dataset=taiwan", None, {})
+        for key in ("linear", "mlp"):
+            m = scene["panels"][key]["metrics"]
+            for f in ("quick_on_map", "safe_on_map"):
+                self.assertTrue(0.0 <= m[f] <= 1.0, (key, f))
+
+    def test_site_offers_diabetes_credit_card_and_cancer(self):
+        _, out = index.route("GET", "/api/datasets", "", None, {})
+        self.assertEqual([d["key"] for d in out["datasets"]], ["pima", "taiwan", "cancer"])
+        self.assertEqual(index.route("GET", "/api/scene", "dataset=heloc", None, {})[0], 400)
+        _, scene = index.route("GET", "/api/scene", "dataset=taiwan", None, {})
+        self.assertTrue(scene["panels"]["mlp"]["metrics"]["safe_ok"])
 
 
 if __name__ == "__main__":

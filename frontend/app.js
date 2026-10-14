@@ -41,6 +41,7 @@ function fmtVal(v, integer) {
   if (v == null || isNaN(v)) return "—";
   if (integer) return (Math.round(v) + 0).toLocaleString();
   const a = Math.abs(v);
+  if (a >= 1000) return (Math.round(v) + 0).toLocaleString();
   return (Number(v.toFixed(a >= 100 ? 0 : a >= 10 ? 1 : 2)) + 0)
     .toString();
 }
@@ -219,12 +220,21 @@ function viewRanges(div, scene, which) {
   return defaultRanges(scene, which);
 }
 
+// The starting view frames where most people are (2nd to 98th percentile), so a
+// few extreme people don't squeeze everyone into a corner; you and your change
+// are always in view.
+const FRAME_PCT = 0.02;
+function quantile(sorted, f) {
+  const i = (sorted.length - 1) * f, lo = Math.floor(i);
+  return sorted[lo] + (sorted[Math.ceil(i)] - sorted[lo]) * (i - lo);
+}
 function defaultRanges(scene, which) {
-  const q = scene.query, cf = scene.panels[which].cfs;
-  const to = arrowTarget(scene, which) || q;
-  const xs = [scene.bounds.x[0], scene.bounds.x[1], q.x, to.x];
-  const ys = [scene.bounds.y[0], scene.bounds.y[1], q.y, to.y];
-  const grow = (lo, hi) => [lo - 0.03 * (hi - lo), hi + 0.03 * (hi - lo)];
+  const q = scene.query, to = arrowTarget(scene, which) || q;
+  const px = scene.points.map((p) => p.x).sort((a, b) => a - b);
+  const py = scene.points.map((p) => p.y).sort((a, b) => a - b);
+  const xs = [quantile(px, FRAME_PCT), quantile(px, 1 - FRAME_PCT), q.x, to.x];
+  const ys = [quantile(py, FRAME_PCT), quantile(py, 1 - FRAME_PCT), q.y, to.y];
+  const grow = (lo, hi) => [lo - 0.08 * (hi - lo), hi + 0.08 * (hi - lo)];
   return [grow(Math.min(...xs), Math.max(...xs)), grow(Math.min(...ys), Math.max(...ys))];
 }
 
@@ -1119,15 +1129,28 @@ function dotAt(div, [px, py]) {
   return best;
 }
 
+// Share of a change below which the map clearly undersells it.
+const OFF_MAP = 0.5;
+function offMapNote(scene) {
+  const which = mapView === "mlp" ? "mlp" : "linear";
+  const m = scene.panels[which].metrics;
+  const share = safeOk(scene, which) ? m.safe_on_map : quickOk(scene, which) ? m.quick_on_map : 1;
+  return share != null && share < OFF_MAP && m.pred_bad
+    ? `<span class="sub">Only ${Math.round(share * 100)}% of this change shows on the map; the rest is in
+       values the map can’t draw, so the arrow may look short of the line.</span>` : "";
+}
+
 function showMapNote(scene) {
   const note = el("map-note"), d = scene.decoded;
-  note.hidden = !d;
-  if (!d) return;
+  const off = offMapNote(scene);
+  note.hidden = !d && !off;
+  if (!d) { note.innerHTML = off; return; }
   const m = scene.panels.linear.metrics, [goodName, badName] = scene.class_names;
   note.innerHTML = `<b>Estimated person at this spot:</b> ` +
     `${G.esc(m.pred_bad ? badName : goodName)} · ${pct(m.p_bad_erm_x0)} chance of ${G.esc(badName)}. ` +
     `<span class="sub">Their numbers are filled in below.</span>` +
-    (d.outside.length ? `<br><span class="warn">Outside the data: ${d.outside.map(G.esc).join(", ")}</span>` : "");
+    (d.outside.length ? `<br><span class="warn">Outside the data: ${d.outside.map(G.esc).join(", ")}</span>` : "") +
+    (off ? "<br>" + off : "");
 }
 
 el("dataset").addEventListener("change", async (e) => {
