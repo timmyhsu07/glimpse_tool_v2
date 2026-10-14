@@ -27,13 +27,14 @@
     <nav id="nav" aria-label="Main">
       <a href="/" data-page="home">Home</a>
       <a href="/app.html" data-page="app">Map</a>
+      <a href="/compare.html" data-page="compare">Compare</a>
       <a href="/account.html" data-page="account" id="account-link">My account</a>
     </nav>
     <button id="theme-toggle" class="theme-btn" type="button"
             aria-label="Toggle light and dark mode"></button>
   </header>
 
-  <main id="account" hidden>
+  <main id="account" class="account-wide" hidden>
     <h1 class="page-h">My account</h1>
     <p id="account-notice" class="notice" role="status" hidden></p>
 
@@ -45,7 +46,7 @@
 
     <section class="acct-card" aria-labelledby="saves-h">
       <h2 id="saves-h">Your saves</h2>
-      <ul id="acct-saves" class="acct-saves"></ul>
+      <div id="acct-saves"></div>
     </section>
 
     <section class="acct-card" aria-labelledby="pw-h">
@@ -77,6 +78,8 @@
       </form>
     </section>
   </main>
+
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
   <script src="/common.js"></script>
   <script src="/account.js"></script>

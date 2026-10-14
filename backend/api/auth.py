@@ -357,8 +357,10 @@ def _clean_values(values):
 
 
 def _entry(row):
-    return {"id": row[0], "name": row[1], "values": json.loads(row[2]),
-            "updated_at": row[3]}
+    e = {"id": row[0], "name": row[1], "values": json.loads(row[2]), "updated_at": row[3]}
+    if len(row) > 4:
+        e["dataset"] = row[4]
+    return e
 
 
 def list_saved(token, dataset):
@@ -366,9 +368,13 @@ def list_saved(token, dataset):
         uid = _user_id(conn, token)
         if uid is None:
             return 401, {"error": SIGN_IN_TO_SAVE}, {}
-        rows = conn.all("SELECT id, name, data_json, updated_at FROM saved_values "
-                        "WHERE user_id = ? AND dataset = ? ORDER BY updated_at DESC, id DESC",
-                        (uid, dataset))
+        if dataset is None:
+            rows = conn.all("SELECT id, name, data_json, updated_at, dataset FROM saved_values "
+                            "WHERE user_id = ? ORDER BY updated_at DESC, id DESC", (uid,))
+        else:
+            rows = conn.all("SELECT id, name, data_json, updated_at FROM saved_values "
+                            "WHERE user_id = ? AND dataset = ? ORDER BY updated_at DESC, id DESC",
+                            (uid, dataset))
     return 200, {"saved": [_entry(r) for r in rows]}, {}
 
 
@@ -399,6 +405,29 @@ def save_values(token, dataset, name, values):
                 "RETURNING id, name, data_json, updated_at",
                 (uid, dataset, name, json.dumps(clean), now))
     return 200, {"saved": _entry(row)}, {}
+
+
+def rename_saved(token, entry_id, name):
+    if not isinstance(entry_id, int) or isinstance(entry_id, bool):
+        return 400, {"error": "'id' must be a number"}, {}
+    name = " ".join(str(name or "").split())[:MAX_NAME]
+    if not name:
+        return 400, {"error": "Give the save a name."}, {}
+    with db.connect() as conn:
+        uid = _user_id(conn, token)
+        if uid is None:
+            return 401, {"error": SIGN_IN_TO_SAVE}, {}
+        with conn.transaction():
+            row = conn.one("SELECT dataset FROM saved_values WHERE id = ? AND user_id = ?",
+                           (entry_id, uid))
+            if row is None:
+                return 404, {"error": "That save no longer exists."}, {}
+            clash = conn.one("SELECT 1 FROM saved_values WHERE user_id = ? AND dataset = ? "
+                             "AND name = ? AND id <> ?", (uid, row[0], name, entry_id))
+            if clash:
+                return 409, {"error": "You already have a save with that name."}, {}
+            conn.execute("UPDATE saved_values SET name = ? WHERE id = ?", (name, entry_id))
+    return 200, {"id": entry_id, "name": name}, {}
 
 
 def delete_saved(token, entry_id):

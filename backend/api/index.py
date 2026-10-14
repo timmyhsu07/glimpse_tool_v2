@@ -26,6 +26,9 @@ _STATIC = {
     "/login.html": ("login.html", _HTML),
     "/account": ("account.html", _HTML),
     "/account.html": ("account.html", _HTML),
+    "/compare": ("compare.html", _HTML),
+    "/compare.html": ("compare.html", _HTML),
+    "/compare.js": ("compare.js", _JS),
     "/common.js": ("common.js", _JS),
     "/home.js": ("home.js", _JS),
     "/app.js": ("app.js", _JS),
@@ -33,7 +36,7 @@ _STATIC = {
     "/account.js": ("account.js", _JS),
     "/style.css": ("style.css", "text/css; charset=utf-8"),
 }
-_AUTH = ("/me", "/register", "/login", "/logout", "/saved", "/account",
+_AUTH = ("/me", "/register", "/login", "/logout", "/saved", "/saved/rename", "/account",
          "/account/password", "/account/delete", "/forgot", "/reset")
 
 _gs = None
@@ -75,6 +78,8 @@ def _saved_route(method, q, body, token):
         ds = data.get("dataset")
     elif method == "GET":
         ds = q.get("dataset", [None])[0]
+        if ds is None:                       # every topic at once (My account)
+            return auth.list_saved(token, None)
     else:
         return 405, {"error": "method not allowed"}, {}
     if ds not in _service().VALID:
@@ -117,6 +122,11 @@ def _auth_route(method, p, q, body, headers):
         return 403, {"error": "Cross-site request refused."}, {}
     token = auth.session_token(headers.get("Cookie"))
     secure = headers.get("X-Forwarded-Proto", "") == "https"
+    if p.endswith("/saved/rename"):
+        data = _json_object(body)
+        if method != "POST" or data is None:
+            return 400, {"error": "POST {id, name}"}, {}
+        return auth.rename_saved(token, data.get("id"), data.get("name"))
     if p.endswith("/saved"):
         return _saved_route(method, q, body, token)
     if method == "GET" and p.endswith("/me"):
@@ -145,6 +155,52 @@ def _auth_route(method, p, q, body, headers):
     return 404, {"error": "not found"}, {}
 
 
+MAX_PEOPLE = 60
+
+
+def _clean_custom(custom):
+    """({feature: float or None}, None), or (None, error message)."""
+    if not isinstance(custom, dict) or len(custom) > 500:
+        return None, "'custom' must be a {feature: value} object"
+    clean = {}
+    for k, v in custom.items():
+        if v is None or v == "":
+            clean[str(k)] = None
+            continue
+        try:
+            f = float(v)
+        except (TypeError, ValueError):
+            f = math.nan
+        if isinstance(v, bool) or not math.isfinite(f):
+            return None, f"'{k}' is not a number: {v!r}"
+        clean[str(k)] = f
+    return clean, None
+
+
+def _people_route(body):
+    """POST {dataset, people: [{feature: value}, ...]} -> predictions, no map."""
+    data = _json_object(body)
+    if data is None:
+        return 400, {"error": "invalid JSON body"}
+    gs = _service()
+    ds = data.get("dataset")
+    if ds not in gs.VALID:
+        return 400, {"error": f"unknown dataset '{ds}'"}
+    raw = data.get("people")
+    if not isinstance(raw, list) or not 0 < len(raw) <= MAX_PEOPLE:
+        return 400, {"error": f"'people' must be a list of 1 to {MAX_PEOPLE} people"}
+    customs = []
+    for person in raw:
+        clean, err = _clean_custom(person)
+        if err:
+            return 400, {"error": err}
+        customs.append(clean)
+    try:
+        return 200, gs.people(ds, customs)
+    except Exception as exc:
+        return 500, {"error": str(exc)}
+
+
 def _map_point(value):
     """A clicked map position [x, y], or None if it is not one."""
     if not isinstance(value, list) or len(value) != 2:
@@ -171,6 +227,9 @@ def route(method, path, query, body, headers=None):
 
     if _is_auth(p):
         return _auth_route(method, p, q, body, headers or {})
+
+    if method == "POST" and p.endswith("/people"):
+        return _people_route(body)
 
     gs = _service()
 
@@ -206,18 +265,9 @@ def route(method, path, query, body, headers=None):
             scene["query"]["from_map"] = True
             scene["decoded"] = {"values": values, "outside": outside}
             return 200, scene
-        custom = data.get("custom")
-        if not isinstance(custom, dict):
-            return 400, {"error": "'custom' must be a {feature: value} object"}
-        clean = {}
-        for k, v in custom.items():
-            if v is None or v == "":
-                clean[k] = None
-            else:
-                try:
-                    clean[k] = float(v)
-                except (TypeError, ValueError):
-                    return 400, {"error": f"'{k}' is not a number: {v!r}"}
+        clean, err = _clean_custom(data.get("custom"))
+        if err:
+            return 400, {"error": err}
         try:
             return 200, gs.scene(ds, custom=clean)
         except Exception as exc:

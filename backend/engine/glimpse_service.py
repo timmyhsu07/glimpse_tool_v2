@@ -28,6 +28,11 @@ def scene(dataset, eps=EPS, query_id=None, custom=None):
     return cf_core.get_scene(dataset, eps=eps, query_id=query_id, custom=custom)
 
 
+def people(dataset, customs, eps=EPS):
+    _ensure(dataset, eps)
+    return cf_core.people(dataset, customs, eps=eps)
+
+
 def decode(dataset, point, eps=EPS):
     _ensure(dataset, eps)
     return cf_core.decode_point(dataset, point, eps=eps)

@@ -38,18 +38,24 @@ Status: [x] done, [~] partly done, [ ] not started.
    - [ ] Pin two people and compare them side by side.
    - [ ] "Show people like me".
 5. What would change it
-   - [x] Plain "Glucose 180 → 124 mg/dL" lines, can't-change values listed with a lock.
-   - [ ] Effort tags (easy / harder), quick vs safe as two tabs.
-   - [ ] "What if" sliders that update the prediction live.
-   - [ ] Save the changes as a checklist plan.
+   - [x] Top 3 changes per model as cards: before → after, unit, effort tag (easy / harder).
+   - [x] Can't-change values as grey lock chips, no explanation text.
+   - [x] "Quickest change" and "Safest change" tabs with icons.
+   - [x] "What if" sliders: the chance updates live and a hollow star moves on the map.
+   - [x] Checklist plan with a live result, saved to the account and comparable with now.
 6. Compare
-   - [ ] You vs a typical person, you before vs after, simple vs flexible model.
+   - [x] Compare page: you vs a typical person, or any two saves (before vs after), with the
+         prediction move, a "flips the result" badge and changed values first.
+   - [ ] Simple vs flexible model side by side on the same page.
 7. My account
    - [x] Email, member since, saves per topic, sign out.
    - [x] Change password, delete account, forgot password (email link).
-   - [ ] Save cards with a mini verdict, rename, compare; a timeline over time.
+   - [x] Save cards with name, date, mini verdict and range bar.
+   - [x] Open, Rename, Compare, Delete with Undo.
+   - [x] Timeline per topic: chance over time across saves.
 8. Sign in / create account
-   - [x] Show-password toggle, "Continue without an account", forgot password.
+   - [x] Two fields with a show-password toggle, "Continue without an account", forgot password,
+         "Save and compare your results", plain errors.
 9. How it works page
    - [~] A short version is on the home page.
    - [ ] Glossary that the "?" tips link into.
