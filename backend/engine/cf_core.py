@@ -340,7 +340,8 @@ def _panel(setup, which, x0):
 
 
 def _feature_deltas(setup, x0, panels):
-    """Return per-feature changes for each robust counterfactual."""
+    """Per-feature changes for each model: the safe (robust) change under the
+    model's name, and the quick (standard) change under "<model>_quick"."""
     data = setup["data"]
     sc = data.scaler
     meta = {f["name"]: f for f in data.feature_meta()}
@@ -361,16 +362,46 @@ def _feature_deltas(setup, x0, panels):
             "pct_x0": _percentile(data.X[:, j], x0[j]),
         }
         for key, panel in panels.items():
-            cf = panel["_cf_rob_full"]
-            d_std = float(cf[j] - x0[j])
-            row[key] = {
-                "delta_std": round(d_std, 4),
-                "delta_real": round(d_std * float(sc.scale_[j]), 4),
-                "cf_real": round(float(sc.mean_[j] + sc.scale_[j] * cf[j]), 4),
-                "pct_cf": round(_percentile(data.X[:, j], float(cf[j])), 1),
-            }
+            for suffix, cf in (("", panel["_cf_rob_full"]), ("_quick", panel["_cf_std_full"])):
+                d_std = float(cf[j] - x0[j])
+                row[key + suffix] = {
+                    "delta_std": round(d_std, 4),
+                    "delta_real": round(d_std * float(sc.scale_[j]), 4),
+                    "cf_real": round(float(sc.mean_[j] + sc.scale_[j] * cf[j]), 4),
+                    "pct_cf": round(_percentile(data.X[:, j], float(cf[j])), 1),
+                }
         out.append(row)
     return out
+
+
+def people(dataset_key, customs, eps=0.03):
+    """Predictions and map positions for several entered people, without a map.
+
+    Each chance range is computed exactly as the verdict card's.
+    """
+    setup = _setup(dataset_key, float(np.clip(eps, 0.005, 0.2)))
+    data, lens = setup["data"], setup["lens"]
+    lin, ell, mlp = setup["lin"], setup["lin_ell"], setup["mlp"]
+    names = [str(n) for n in data.feature_names]
+    out = []
+    for custom in customs:
+        x0, provided = _custom_x0(setup, custom)
+        X = x0[None, :]
+        z = lens.embed(x0)[0]
+        res = {"x": float(z[0]), "y": float(z[1])}
+        for key, logit, rob in (("linear", lin.logit(X), ell.robust_logit(X, TARGET_CLASS)),
+                                ("mlp", mlp.logit(X), mlp.robust_logit(X, TARGET_CLASS))):
+            lg = float(logit[0])
+            pen = max(-(lg + float(rob[0])), 0.0)
+            res[key] = {"p": round(float(_sigmoid(lg)), 4), "lo": round(float(_sigmoid(lg - pen)), 4),
+                        "hi": round(float(_sigmoid(lg + pen)), 4)}
+        real = data.to_real(x0)
+        res["values"] = {n: round(float(v), 4) for n, v in zip(names, real)}
+        res["pct"] = {n: round(float(_percentile(data.X[:, j], x0[j])), 1) for j, n in enumerate(names)}
+        res["provided"] = [n for n, ok in zip(names, provided) if ok]
+        out.append(res)
+    return {"class_names": list(data.class_names), "features": setup["features"],
+            "importance": setup["scatter_info"]["importance"], "people": out}
 
 
 def get_scene(dataset_key, eps=0.03, query_id=None, custom=None):

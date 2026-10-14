@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="google-site-verification" content="mQlGSmTbCYFctZavIyGIMyBsTILOaBCQHSwizkSydew">
+  <meta name="description" content="GLIMPSE is a university research tool that shows how sure machine-learning models are about a prediction, and what would change it.">
+  <title>Compare — GLIMPSE</title>
+  <script>
+    // Apply the saved theme before the page renders.
+    (function () {
+      try {
+        var q = new URLSearchParams(location.search).get("theme");
+        var t = (q === "dark" || q === "light") ? q
+              : localStorage.getItem("glimpse-theme");
+        if (t !== "dark" && t !== "light")
+          t = matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+        document.documentElement.setAttribute("data-theme", t);
+      } catch (e) {}
+    })();
+  </script>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body data-page="compare">
+  <header id="titlebar">
+    <a class="brand" href="/">GLIMPSE</a>
+    <nav id="nav" aria-label="Main">
+      <a href="/" data-page="home">Home</a>
+      <a href="/app.html" data-page="app">Map</a>
+      <a href="/compare.html" data-page="compare">Compare</a>
+      <a href="/login.html" data-page="account" id="account-link">Sign in</a>
+    </nav>
+    <button id="theme-toggle" class="theme-btn" type="button"
+            aria-label="Toggle light and dark mode"></button>
+  </header>
+
+  <main id="compare-page">
+    <h1 class="page-h">Compare</h1>
+    <div class="cmp-pickers">
+      <label>Topic <select id="cmp-topic"></select></label>
+      <label>Left <select id="cmp-a"></select></label>
+      <label>Right <select id="cmp-b"></select></label>
+    </div>
+    <p id="cmp-hint" class="sub"></p>
+
+    <section id="cmp-summary" class="cmp-summary" aria-live="polite"></section>
+
+    <section id="cmp-values" aria-labelledby="cmp-values-h">
+      <h2 id="cmp-values-h">What’s different <span id="cmp-values-tip"></span></h2>
+      <table class="cmp-table" id="cmp-table"></table>
+      <button type="button" id="cmp-show-same" class="link-btn" hidden></button>
+    </section>
+  </main>
+
+  <script src="/common.js"></script>
+  <script src="/compare.js"></script>
+</body>
+</html>

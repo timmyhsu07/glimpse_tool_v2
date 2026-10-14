@@ -31,7 +31,8 @@ frontend/            the site: served as-is, no build step
   index.html home.js   home: pick a topic
   app.html app.js      the map, verdict, "how you compare", what would change it
   login.html auth.js   sign in, create account, forgot / reset password
-  account.html account.js   my account: saves, change password, delete account
+  account.html account.js   my account: save cards, timeline, change password, delete account
+  compare.html compare.js   compare two people: you, a save, or a typical person
   common.js            shared: theme, navigation, topic names, "?" tips
   style.css            shared by every page
 backend/
@@ -56,7 +57,9 @@ api/index.py         Vercel entry point; loads backend/api/index.py
 | POST | `/api/scene` | `{dataset, custom}` entered values, or `{dataset, point: [x, y]}` a map spot |
 | GET | `/api/me` | the signed-in user, or `null` |
 | POST | `/api/register`, `/api/login`, `/api/logout` | accounts (no email verification) |
-| GET | `/api/saved?dataset=` | the user's named saves for a dataset, newest first |
+| POST | `/api/people` | `{dataset, people: [{feature: value}, ...]}` predictions and map spots, no map (max 60) |
+| GET | `/api/saved?dataset=` | the user's named saves for a dataset (all topics without `dataset`) |
+| POST | `/api/saved/rename` | `{id, name}` |
 | POST | `/api/saved` | `{dataset, name, values}`; replaces a save with the same name (max 50) |
 | DELETE | `/api/saved?id=` | delete one save |
 | GET | `/api/account` | email, member since, saves per topic |

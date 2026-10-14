@@ -92,11 +92,8 @@ function wireForm(name, url, check, done, payload) {
 }
 
 const goNext = () => { location.href = nextPath(); };
-const newPassword = (d) => {
-  if (d.password.length < 8) return "Use at least 8 characters.";
-  if (d.password !== d.confirm) return "The two passwords don’t match.";
-  return "";
-};
+// One password field with a Show button, so no "type it again" box.
+const newPassword = (d) => (d.password.length < 8 ? "Use at least 8 characters." : "");
 
 wireForm("login", "/api/login", (d) =>
   !d.email.trim() || !d.password ? "Enter your email and password." : "", goNext);

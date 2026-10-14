@@ -129,6 +129,12 @@ function buildPanelTraces(scene, which) {
   // Ink, not purple, so the ✕ stays visible on the violet density map.
   traces.push(markerTrace(cf.standard, isDark() ? "#f2f2f2" : "#111111", "quick change", "x", 10));
   traces.push(markerTrace(cf.ellice, COLORS.ell, "safe change", "square", 9));
+  traces.push({
+    type: "scatter", mode: "markers", x: [null], y: [null], name: "what if",
+    marker: { size: 15, symbol: "star-open", color: isDark() ? "#ffd166" : "#a15c00",
+              line: { width: 2 } },
+    showlegend: false, hovertemplate: "What if<extra></extra>",
+  });
   return traces;
 }
 
@@ -373,52 +379,255 @@ el("compare-more").addEventListener("click", () => {
   if (lastScene) renderCompare(lastScene);
 });
 
+// ---- what would change it: quickest / safest tabs, change cards, what-if, plan
+
+let recoKind = "quick";               // "quick" = this model only, "safe" = every good model
+const EASY_SHIFT = 20;                 // rank points; a smaller move counts as "easy"
+
+// The top changes for one model: [{row or group, before, after, unit, shift}].
+function topChanges(scene, which, kind, n) {
+  const key = kind === "quick" ? which + "_quick" : which;
+  const items = [];
+  for (const it of displayRows(scene)) {
+    if (it.kind === "group") {
+      if (it.immutable) continue;
+      const members = scene.deltas.filter((x) => x.group && x.group_label === it.label);
+      const after = members.find((x) => x[key].cf_real >= 0.5);
+      const cat = after ? after.value_label : "none";
+      if (cat === it.youCat) continue;
+      items.push({ label: it.label, before: it.youCat, after: cat, unit: "", shift: 50,
+                   mag: Math.max(...members.map((x) => Math.abs(x[key].delta_std))), group: true });
+      continue;
+    }
+    const r = it.r, d = r[key];
+    if (r.immutable || Math.abs(d.delta_std) <= 0.05) continue;
+    items.push({ name: r.name, label: r.label, unit: r.unit || "", integer: r.integer,
+                 before: fmtVal(r.x0_real, r.integer), after: fmtVal(d.cf_real, r.integer),
+                 afterValue: d.cf_real, up: d.delta_real > 0,
+                 shift: Math.abs(d.pct_cf - r.pct_x0), mag: Math.abs(d.delta_std) });
+  }
+  return items.sort((a, b) => b.mag - a.mag).slice(0, n);
+}
+
+function changeCard(c) {
+  const easy = c.shift <= EASY_SHIFT;
+  const arrow = c.group ? "→" : c.up ? "▲" : "▼";
+  return `<li class="chg-card">
+    <div class="chg-top"><span class="chg-arrow ${c.group ? "" : c.up ? "up" : "down"}"
+      aria-hidden="true">${arrow}</span><b>${G.esc(c.label)}</b>
+      <span class="effort ${easy ? "easy" : "hard"}">${easy ? "easy" : "harder"}</span></div>
+    <div class="chg-vals">${G.esc(c.before)} → <b>${G.esc(c.after)}</b>
+      ${c.unit ? `<span class="sub">${G.esc(c.unit)}</span>` : ""}</div></li>`;
+}
+
 function renderRecommend(scene) {
-  const [goodName, badName] = scene.class_names;
-  const anyBad = scene.panels.linear.metrics.pred_bad ||
-                 scene.panels.mlp.metrics.pred_bad;
-  const imm = scene.deltas.filter((r) => r.immutable).map((r) => r.label);
-  el("reco-note").innerHTML = (anyBad && imm.length)
-    ? `${G.LOCK} Can’t change: ${imm.map(G.esc).join(", ")}`
-    : "";
+  const [goodName] = scene.class_names;
+  const imm = scene.deltas.filter((r) => r.immutable && !r.group).map((r) => r.label);
+  el("reco-fixed").innerHTML = imm.map((l) =>
+    `<span class="fixed-chip">${G.LOCK} ${G.esc(l)}</span>`).join("");
+  for (const t of document.querySelectorAll(".reco-tabs [role=tab]"))
+    t.setAttribute("aria-selected", String(t.dataset.kind === recoKind));
 
   el("reco-lists").innerHTML = ["linear", "mlp"].map((which) => {
     const m = scene.panels[which].metrics;
     const name = which === "linear" ? "Simple model" : "Flexible model";
-    if (!m.pred_bad) {
+    if (!m.pred_bad)
       return `<div class="reco-col"><div class="reco-h">${name}</div>
         <p class="reco-ok">✓ Already ${G.esc(goodName)}. Nothing to change.</p></div>`;
-    }
-    // Show meaningful mutable changes, with at least three when available.
-    const magOf = (it) => it.kind === "group"
-      ? it.per[which].mag : Math.abs(it.r[which].delta_std);
-    const ranked = displayRows(scene)
-      .filter((it) => !(it.kind === "group" ? it.immutable : it.r.immutable))
-      .sort((a, b) => magOf(b) - magOf(a));
-    const strong = ranked.filter((it) => magOf(it) > 0.05);
-    const rows = (strong.length >= 2 ? strong : ranked.slice(0, 3)).slice(0, 5);
-    const items = rows.map((it) => {
-      if (it.kind === "group") {
-        const p = it.per[which];
-        if (!p.changed) return "";
-        return `<li class="up"><span class="arrow">→</span>
-          <b>${esc(it.label)}</b> ${esc(it.youCat)} → <b>${esc(p.cat)}</b></li>`;
-      }
-      const r = it.r, d = r[which];
-      const up = d.delta_real > 0;
-      const unit = r.unit ? " " + r.unit : "";
-      return `<li class="${up ? "up" : "down"}">
-        <span class="arrow" aria-label="${up ? "raise" : "lower"}">${up ? "▲" : "▼"}</span>
-        <b>${r.label}</b> ${fmtVal(r.x0_real, r.integer)} →
-        <b>${fmtVal(d.cf_real, r.integer)}${unit}</b>
-        <span class="sub">rank ${Math.round(r.pct_x0)}% → ${Math.round(d.pct_cf)}%</span></li>`;
-    }).filter(Boolean).join("");
-    return `<div class="reco-col">
-      <div class="reco-h">${name}</div>
-      <ul class="reco">${items ||
-        "<li class='sub'>No single change is enough.</li>"}</ul>
-    </div>`;
+    const cards = topChanges(scene, which, recoKind, 3);
+    return `<div class="reco-col"><div class="reco-h">${name}</div>
+      <ul class="chg-cards">${cards.map(changeCard).join("") ||
+        "<li class='sub'>No single change is enough.</li>"}</ul></div>`;
   }).join("");
+  renderPlan(scene);
+}
+
+for (const t of document.querySelectorAll(".reco-tabs [role=tab]")) {
+  t.addEventListener("click", () => {
+    recoKind = t.dataset.kind;
+    if (lastScene) renderRecommend(lastScene);
+  });
+}
+
+// The current person's values in real units (blanks filled with typical values).
+function personValues(scene) {
+  return Object.fromEntries(scene.deltas.map((r) => [r.name, r.x0_real]));
+}
+
+async function predict(values) {
+  const resp = await fetch("/api/people", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ dataset: state.dataset, people: [values] }),
+  });
+  const body = await resp.json();
+  if (!resp.ok) throw new Error(body.error || "prediction failed");
+  return { person: body.people[0], classNames: body.class_names };
+}
+
+function chanceLine(scene, before, after) {
+  const bad = G.esc(scene.class_names[1]);
+  const b = Math.round(before.p * 100), a = Math.round(after.p * 100);
+  const moved = a - b;
+  const dir = moved === 0 ? "no change" : `${moved > 0 ? "▲ up" : "▼ down"} ${Math.abs(moved)} points`;
+  return `<b>${b}% → ${a}%</b> chance of ${bad} <span class="sub">(${dir} · models say ` +
+    `${Math.round(after.lo * 100)}–${Math.round(after.hi * 100)}%)</span>`;
+}
+
+// ---- what if: drag a value, the chance and a ghost star update live
+
+let whatifTimer = null, whatifValues = null;
+
+function whatifFeatures(scene) {
+  const rank = new Map((scene.importance || []).map((n, i) => [n, i]));
+  const meta = new Map(scene.features.map((f) => [f.name, f]));
+  return scene.deltas
+    .filter((r) => !r.group && !r.immutable && meta.has(r.name))
+    .sort((a, b) => (rank.get(a.name) ?? 1e9) - (rank.get(b.name) ?? 1e9))
+    .slice(0, 4)
+    .map((r) => ({ r, f: meta.get(r.name) }));
+}
+
+function renderWhatif(scene) {
+  whatifValues = personValues(scene);
+  el("whatif-sliders").innerHTML = whatifFeatures(scene).map(({ r, f }) => {
+    const lo = Math.min(f.p5 ?? f.min, r.x0_real), hi = Math.max(f.p95 ?? f.max, r.x0_real);
+    const step = f.integer ? 1 : (hi - lo) / 100;
+    return `<label class="wi-row"><span class="wi-name">${G.esc(r.label)}</span>
+      <input type="range" min="${lo}" max="${hi}" step="${step}" value="${r.x0_real}"
+             data-name="${G.esc(r.name)}" data-int="${f.integer}" data-start="${r.x0_real}"
+             aria-label="${G.esc(r.label)}">
+      <output class="wi-val">${fmtVal(r.x0_real, f.integer)}${f.unit ? " " + G.esc(f.unit) : ""}</output></label>`;
+  }).join("");
+  el("whatif-result").innerHTML = `<span class="sub">Drag a slider.</span>`;
+  moveGhost(null);
+}
+
+el("whatif-sliders").addEventListener("input", (e) => {
+  const inp = e.target.closest("input[type=range]");
+  if (!inp || !lastScene) return;
+  const v = Number(inp.value), isInt = inp.dataset.int === "true";
+  const unit = inp.nextElementSibling.textContent.split(" ").slice(1).join(" ");
+  inp.nextElementSibling.textContent = fmtVal(v, isInt) + (unit ? " " + unit : "");
+  whatifValues[inp.dataset.name] = isInt ? Math.round(v) : v;
+  clearTimeout(whatifTimer);
+  whatifTimer = setTimeout(runWhatif, 120);
+});
+
+async function runWhatif() {
+  const scene = lastScene;
+  try {
+    const { person } = await predict(whatifValues);
+    if (scene !== lastScene) return;
+    const before = scene.panels.linear.metrics;
+    el("whatif-result").innerHTML = "Simple model: " + chanceLine(scene,
+      { p: before.p_bad_erm_x0 }, person.linear);
+    moveGhost(person);
+  } catch (e) {
+    el("whatif-result").textContent = "Couldn’t update. Try again.";
+  }
+}
+
+// A hollow star on the maps shows where the what-if person would sit.
+function moveGhost(person) {
+  if (!plotsReady) return;
+  for (const div of Object.values(plotDivs)) {
+    const i = (div.data || []).findIndex((t) => t.name === "what if");
+    if (i < 0) continue;
+    Plotly.restyle(div, { x: [[person ? person.x : null]], y: [[person ? person.y : null]] }, [i]);
+  }
+}
+
+el("whatif-reset").addEventListener("click", () => { if (lastScene) renderWhatif(lastScene); });
+el("whatif-apply").addEventListener("click", () => {
+  if (!whatifValues) return;
+  state.custom = { ...whatifValues };
+  state.point = null;
+  restoreForm();
+  refresh();
+});
+
+// ---- my plan: tick the changes you'll make, see the result, save it
+
+function planKey(scene) {
+  const q = scene.query;
+  return `glimpse-plan:${state.dataset}:${q.custom ? "you" : q.id}`;
+}
+
+function renderPlan(scene) {
+  const items = scene.panels.linear.metrics.pred_bad ? topChanges(scene, "linear", recoKind, 5) : [];
+  let ticked = null;
+  try { ticked = JSON.parse(localStorage.getItem(planKey(scene)) || "null"); } catch (e) {}
+  el("plan-list").innerHTML = items.length ? items.map((c, i) => {
+    const on = ticked ? ticked.includes(c.label) : i < 2;
+    return `<li><label class="plan-item"><input type="checkbox" data-i="${i}" ${on ? "checked" : ""}>
+      <span><b>${G.esc(c.label)}</b> ${G.esc(c.before)} → <b>${G.esc(c.after)}</b>
+      ${c.unit ? G.esc(c.unit) : ""}</span></label></li>`;
+  }).join("") : `<li class="sub">Nothing to plan: already ${G.esc(scene.class_names[0])}.</li>`;
+  el("plan-list").dataset.items = JSON.stringify(items);
+  el("plan-save").disabled = !items.length;
+  el("plan-msg").textContent = "";
+  el("plan-compare").hidden = true;
+  updatePlan();
+}
+
+function planValues() {
+  const items = JSON.parse(el("plan-list").dataset.items || "[]");
+  const values = personValues(lastScene), picked = [];
+  for (const cb of el("plan-list").querySelectorAll("input:checked")) {
+    const c = items[+cb.dataset.i];
+    picked.push(c.label);
+    if (!c.group) values[c.name] = c.integer ? Math.round(c.afterValue) : c.afterValue;
+    else for (const r of lastScene.deltas.filter((x) => x.group_label === c.label))
+      values[r.name] = r[recoKind === "quick" ? "linear_quick" : "linear"].cf_real >= 0.5 ? 1 : 0;
+  }
+  return { values, picked };
+}
+
+let planTimer = null;
+function updatePlan() {
+  if (!lastScene) return;
+  const { picked } = planValues();
+  try { localStorage.setItem(planKey(lastScene), JSON.stringify(picked)); } catch (e) {}
+  if (!picked.length) { el("plan-result").innerHTML = `<span class="sub">Tick what you’ll change.</span>`; return; }
+  clearTimeout(planTimer);
+  planTimer = setTimeout(async () => {
+    const scene = lastScene;
+    try {
+      const { person } = await predict(planValues().values);
+      if (scene !== lastScene) return;
+      el("plan-result").innerHTML = "With this plan: " + chanceLine(scene,
+        { p: scene.panels.linear.metrics.p_bad_erm_x0 }, person.linear);
+    } catch (e) {
+      el("plan-result").textContent = "Couldn’t update. Try again.";
+    }
+  }, 120);
+}
+el("plan-list").addEventListener("change", updatePlan);
+
+el("plan-save").addEventListener("click", async () => {
+  if (!lastScene) return;
+  const { values, picked } = planValues();
+  if (!picked.length) { el("plan-msg").textContent = "Tick at least one change."; return; }
+  if (!currentUser) { goSignInToSave(values); return; }
+  const when = new Date().toLocaleDateString([], { month: "short", day: "numeric" });
+  const resp = await fetch("/api/saved", {
+    method: "POST", headers: { "Content-Type": "application/json" }, credentials: "same-origin",
+    body: JSON.stringify({ dataset: state.dataset, name: `Plan, ${when}`, values }),
+  });
+  const body = await resp.json().catch(() => ({}));
+  if (!resp.ok) { el("plan-msg").textContent = body.error || "Couldn’t save the plan."; return; }
+  el("plan-msg").textContent = `Saved “${body.saved.name}”.`;
+  const now = encodeYou(personValues(lastScene));
+  el("plan-compare").href = `/compare.html?dataset=${encodeURIComponent(state.dataset)}` +
+    `&you=${now}&b=${body.saved.id}`;
+  el("plan-compare").hidden = false;
+  refreshSaved();
+});
+
+// Values as "name:value,..." for links (the same format ?you= reads).
+function encodeYou(values) {
+  return encodeURIComponent(Object.entries(values)
+    .filter(([, v]) => v != null).map(([k, v]) => `${k}:${+Number(v).toFixed(4)}`).join(","));
 }
 
 // Build rows for the counterfactual comparison.
@@ -661,6 +870,9 @@ function updatePanel(scene) {
   renderVerdict(scene);
   renderCompare(scene);
   renderRecommend(scene);
+  renderWhatif(scene);
+  el("compare-typical").href = `/compare.html?dataset=${encodeURIComponent(state.dataset)}` +
+    `&you=${encodeYou(personValues(scene))}`;
   renderChanges(scene);
 
   el("d-std-lin").textContent = scene.panels.linear.cfs.standard.distance.toFixed(3);
@@ -1094,6 +1306,15 @@ async function init() {
 
   await refresh();
   await refreshSaved();
+  const openId = Number(qs.get("save"));
+  const toOpen = openId && savedEntries.find((e) => e.id === openId);
+  if (toOpen) {
+    state.custom = toOpen.values;
+    state.point = null;
+    restoreForm();
+    el("save-msg").textContent = `Opened “${toOpen.name}”.`;
+    await refresh();
+  }
   if (pending) openSavePanel();
   else if (qs.get("enter") === "1") {
     el("you-details").open = true;
@@ -1113,6 +1334,12 @@ el("compare-tip").innerHTML = G.tip("Where each number sits among everyone in th
   "Most important first. A lock means it can’t be changed.", "right");
 el("reco-tip").innerHTML = G.tip("The smallest changes that flip the result for every " +
   "model that fits the data about as well. Things you can’t change are never suggested.");
+el("reco-kind-tip").innerHTML = G.tip("Quickest: the smallest change for this model. " +
+  "Safest: a change that works for every model that fits the data about as well.");
+el("whatif-tip").innerHTML = G.tip("Drag a value. The chance updates and a hollow star " +
+  "shows where you would move on the map.");
+el("plan-tip").innerHTML = G.tip("Tick the changes you’ll make. Save the plan to your " +
+  "account and compare it with now.", "right");
 el("changes-tip").innerHTML = G.tip("Now: your numbers. After: the closest person every " +
   "good model would put on the other side.");
 
