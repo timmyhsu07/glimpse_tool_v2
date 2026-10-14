@@ -60,7 +60,10 @@ function themeColors() {
 }
 
 document.addEventListener("glimpse-theme", () => {
-  if (plotsReady && lastScene) redrawPlots(lastScene);
+  if (plotsReady && lastScene) {
+    redrawPlots(lastScene);
+    renderLegend(lastScene);
+  }
 });
 
 function polyTraces(lines, color, width, opacity, name, showlegend) {
@@ -94,7 +97,7 @@ function buildPanelTraces(scene, which) {
   traces.push({
     type: "heatmap", x: f.x, y: f.y, z: f.z,
     zmin: 0, zmax: 1, colorscale: FIELD_SCALE, zsmooth: "best",
-    opacity: 0.9, hoverinfo: "none", showscale: which === colorbarPanel(),
+    opacity: oldGraph ? 0.9 : 0.4, hoverinfo: "none", showscale: which === colorbarPanel(),
     colorbar: { title: { text: `chance of ${scene.class_names[1]}`, side: "right",
                          font: { color: tc.font } },
                 tickfont: { color: tc.font },
@@ -123,7 +126,8 @@ function buildPanelTraces(scene, which) {
     name: "person", showlegend: false, customdata: [q.id],
     hovertemplate: `${qName}<extra></extra>`,
   });
-  traces.push(markerTrace(cf.standard, COLORS.std, "quick change", "x", 9));
+  // Ink, not purple, so the ✕ stays visible on the violet density map.
+  traces.push(markerTrace(cf.standard, isDark() ? "#f2f2f2" : "#111111", "quick change", "x", 10));
   traces.push(markerTrace(cf.ellice, COLORS.ell, "safe change", "square", 9));
   return traces;
 }
@@ -170,14 +174,18 @@ function disputed(scene) {
 }
 
 // The density map: where people are, without showing any one of them.
+// One strong violet, see-through where few people are and dark where many are.
+const DENSITY = { light: "88,52,196", dark: "185,160,255" };
 function densityTrace(scene) {
-  const ink = isDark() ? "230,232,240" : "20,24,40";
+  const c = isDark() ? DENSITY.dark : DENSITY.light;
   return {
     type: "histogram2dcontour", x: scene.points.map((p) => p.x),
-    y: scene.points.map((p) => p.y), nbinsx: 28, nbinsy: 28, ncontours: 10,
-    colorscale: [[0, `rgba(${ink},0)`], [0.15, `rgba(${ink},0.05)`], [1, `rgba(${ink},0.55)`]],
-    contours: { coloring: "fill", showlines: false }, showscale: false,
-    hoverinfo: "skip", name: "people",
+    y: scene.points.map((p) => p.y), nbinsx: 28, nbinsy: 28, ncontours: 8,
+    colorscale: [[0, `rgba(${c},0)`], [0.12, `rgba(${c},0.22)`],
+                 [0.5, `rgba(${c},0.55)`], [1, `rgba(${c},0.9)`]],
+    contours: { coloring: "fill", showlines: true },
+    line: { color: `rgba(${c},0.95)`, width: 1 },
+    showscale: false, hoverinfo: "skip", name: "people",
   };
 }
 
@@ -282,7 +290,7 @@ function renderLegend(scene) {
   const people = oldGraph
     ? `<li><span class="dot" style="background:${COLORS.good}"></span> ${G.esc(g)}` +
       ` <span class="dot" style="background:${COLORS.bad}"></span> ${G.esc(b)}</li>`
-    : `<li><span class="sw" style="background:rgba(20,24,40,0.45)"></span> Many people</li>`;
+    : `<li><span class="sw" style="background:rgb(${isDark() ? DENSITY.dark : DENSITY.light})"></span> Many people</li>`;
   el("legend").innerHTML = [
     `<li><span class="sw" style="background:#aaffaa"></span> ${G.esc(g)} side` +
       ` <span class="sw" style="background:#ffaaff"></span> ${G.esc(b)} side</li>`,
