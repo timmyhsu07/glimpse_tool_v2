@@ -13,6 +13,7 @@ import hashlib
 import hmac
 import json
 import math
+import os
 import secrets
 import time
 from http.cookies import SimpleCookie
@@ -35,6 +36,15 @@ FAIL_LIMIT_IP = 50             # failed sign-ins per address per window
 RESET_MINUTES = 60
 RESET_LIMIT_EMAIL = 3          # reset emails per address per hour
 RESET_LIMIT_IP = 20            # reset requests per network address per hour
+
+# Shared test accounts shown on the sign-in page: they can sign in and save, but
+# nobody can change their password, reset it, or delete them.
+def demo_accounts():
+    raw = os.environ.get("GLIMPSE_DEMO_ACCOUNTS", "test@ex.com")
+    return {e.strip().lower() for e in raw.split(",") if e.strip()}
+
+
+DEMO_LOCKED = "This is the shared test account, so it can't be changed."
 
 MAX_FIELDS = 500
 MAX_SAVES = 50                 # named saves per user per dataset
@@ -214,6 +224,8 @@ def account(token):
 def _check_own_password(conn, uid, password):
     """(ok, error response). Wrong guesses count toward the sign-in throttle."""
     email, stored = conn.one("SELECT email, password_hash FROM users WHERE id = ?", (uid,))
+    if email in demo_accounts():
+        return False, (403, {"error": DEMO_LOCKED}, {})
     key = f"email:{email}"
     if _throttled(conn, [(key, FAIL_LIMIT_EMAIL)], FAIL_WINDOW):
         return False, (429, {"error": "Too many attempts. Wait a few minutes and try again."}, {})
@@ -276,6 +288,8 @@ def request_reset(data, base_url, ip=""):
     email = str(data.get("email") or "").strip().lower()
     if len(email) > 254 or not _EMAIL.match(email):
         return 400, {"error": "Enter a valid email address."}, {}
+    if email in demo_accounts():
+        return 403, {"error": DEMO_LOCKED}, {}
     keys = [(f"reset:{email}", RESET_LIMIT_EMAIL)] + ([(f"reset-ip:{ip}", RESET_LIMIT_IP)] if ip else [])
     with db.connect() as conn:
         if _throttled(conn, keys, 3600):

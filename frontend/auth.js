@@ -40,7 +40,16 @@ for (const b of document.querySelectorAll(".pw-show")) {
   });
 }
 
+// The shared testing account shown next to the form.
+el("wip-fill").addEventListener("click", () => {
+  showForm("login");
+  el("login-email").value = "test@ex.com";
+  el("login-password").value = "test123";
+  el("form-login").querySelector(".auth-submit").focus();
+});
+
 function showSignedIn(user) {
+  el("wip-account").hidden = !!user;
   el("auth-forms").hidden = !!user;
   el("auth-signed-in").hidden = !user;
   if (user) el("signed-in-email").textContent = user.email;
