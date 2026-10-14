@@ -641,3 +641,35 @@ table.chg tr.immrow .fname-cell { color: var(--muted); }
 .wi-num.out { border-color: var(--bad); background: var(--field); }
 .wi-val .sub { min-width: 3.4rem; text-align: left; }
 .reco-none { font-size: 0.92rem; margin: 0.2rem 0; }
+
+/* Chance bar: green and pink halves split at 50%, a band for the other good models,
+   a dot for the best guess */
+.vchance { font-size: 1.25rem; }
+.vothers { margin: 0.1rem 0 0.1rem; }
+.rb { margin: 0.55rem 0 0.2rem; }
+.rb-track { position: relative; height: 14px; border-radius: 7px; overflow: visible; }
+.rb-zone { position: absolute; top: 0; bottom: 0; width: 50%; }
+.rb-good { left: 0; border-radius: 7px 0 0 7px;
+  background: color-mix(in srgb, var(--good-bd) 55%, var(--card));
+  border: 1px solid var(--good-bd); border-right: 0; }
+.rb-bad { right: 0; border-radius: 0 7px 7px 0;
+  background: color-mix(in srgb, var(--bad-bd) 55%, var(--card));
+  border: 1px solid var(--bad-bd); border-left: 0; }
+.rb-mid { position: absolute; left: 50%; top: -3px; bottom: -3px; width: 2px; margin-left: -1px;
+  background: var(--muted); }
+.rb-band { position: absolute; top: 4px; bottom: 4px; border-radius: 3px;
+  background: rgba(40, 40, 55, 0.45); }
+.rb-dot { position: absolute; top: 50%; width: 14px; height: 14px; margin: -7px 0 0 -7px;
+  border-radius: 50%; background: var(--ink); border: 2px solid var(--card);
+  box-shadow: 0 0 0 1px var(--ink); }
+.rb-scale { display: flex; justify-content: space-between; margin-top: 0.25rem;
+  font-size: 0.72rem; color: var(--muted); }
+.rb-scale span:nth-child(2) { position: absolute; left: 50%; transform: translateX(-50%); }
+.rb { position: relative; }
+.rb-compact { margin: 0.3rem 0 0.35rem; }
+.rb-compact .rb-track { height: 10px; }
+.rb-compact .rb-dot { width: 11px; height: 11px; margin: -5.5px 0 0 -5.5px; }
+:root[data-theme="dark"] .rb-band { background: rgba(235, 235, 245, 0.35); }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .rb-band { background: rgba(235, 235, 245, 0.35); }
+}

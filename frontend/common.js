@@ -28,6 +28,23 @@
 
   const isDark = () => document.documentElement.getAttribute("data-theme") === "dark";
 
+  // The chance bar: a green half and a pink half split at 50%, a band for what the
+  // other good models say (lo..hi), and a dot for the best guess. Percent inputs.
+  function rangeBar(lo, hi, p, goodName, badName, compact) {
+    const clamp = (v) => Math.min(100, Math.max(0, v));
+    lo = clamp(lo); hi = clamp(hi); p = clamp(p);
+    const label = `Best guess ${p}% chance of ${badName}. Other good models say ${lo}% to ${hi}%.`;
+    return `<div class="rb${compact ? " rb-compact" : ""}" role="img" aria-label="${esc(label)}">
+      <div class="rb-track">
+        <span class="rb-zone rb-good"></span><span class="rb-zone rb-bad"></span>
+        <span class="rb-mid"></span>
+        <span class="rb-band" style="left:${lo}%;width:${Math.max(hi - lo, 1)}%"></span>
+        <span class="rb-dot" style="left:${p}%"></span>
+      </div>${compact ? "" : `
+      <div class="rb-scale"><span>${esc(goodName)}</span><span>50%</span><span>${esc(badName)}</span></div>`}
+    </div>`;
+  }
+
   function applyTheme(t) {
     document.documentElement.setAttribute("data-theme", t);
     try { localStorage.setItem(THEME_KEY, t); } catch (e) {}
@@ -65,5 +82,5 @@
     markNav();
   });
 
-  window.GLIMPSE = { TOPICS, topicName, icon, tip, esc, LOCK, isDark, me };
+  window.GLIMPSE = { TOPICS, topicName, icon, tip, esc, LOCK, isDark, me, rangeBar };
 })();

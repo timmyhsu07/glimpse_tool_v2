@@ -361,11 +361,11 @@ function renderVerdict(scene) {
     return `<div class="vmodel ${m.pred_bad ? "bad" : "good"}">
       <div class="vlabel">${name}</div>
       <div class="vpred">${G.esc(side)}</div>
-      <div class="vrange">${lo}–${hi}% chance of ${G.esc(badName)}
-        ${G.tip(`Bar: what every model that fits the data about as well says. ` +
-          `Tick: best guess, ${erm}%.`, "right")}</div>
-      <div class="vbar" role="img" aria-label="${lo} to ${hi} percent, best guess ${erm}">
-        <span style="left:${lo}%;right:${100 - hi}%"></span><i style="left:${erm}%"></i></div>
+      <div class="vrange"><b class="vchance">${erm}%</b> chance of ${G.esc(badName)}
+        ${G.tip(`The dot is the best guess. The shaded band is what other models that ` +
+          `fit the data about as well say. If the band crosses 50%, they disagree.`, "right")}</div>
+      <div class="vothers sub">Other good models: ${lo}–${hi}%</div>
+      ${G.rangeBar(lo, hi, erm, goodName, badName)}
     </div>`;
   }).join("");
 }
