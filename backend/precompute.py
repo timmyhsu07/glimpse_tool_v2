@@ -14,13 +14,15 @@ OUT = os.path.join(ENGINE, "precomputed")
 os.makedirs(OUT, exist_ok=True)
 
 
-def main():
+def main(keys=None):
     import numpy, scipy, sklearn, contourpy
     print(f"env: numpy {numpy.__version__}  scipy {scipy.__version__}  "
           f"scikit-learn {sklearn.__version__}  contourpy {contourpy.__version__}")
     print("pin these versions in requirements.txt\n")
     for d in cf_core.DATASETS:
         key = d["key"]
+        if keys and key not in keys:
+            continue
         t0 = time.time()
         print(f"fitting {key} ...", flush=True)
         m = cf_core._models(key, EPS)
@@ -34,4 +36,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    main(sys.argv[1:])            # e.g. `python precompute.py taiwan` refits just that topic

@@ -27,13 +27,18 @@ IMMUTABLE = {
     "heloc": {"MSinceOldestTradeOpen", "AverageMInFile",
               "ExternalRiskEstimate"},
     "cancer": set(),
+    "taiwan": {"x2", "x3", "x4", "x5"},          # sex, education, marriage, age
 }
 
 _MODELS = {}
 _LENSES = {}
 _VIEWS = {}
 
-DATASETS = DATASET_CHOICES
+# The topics the site offers, in order. Credit (heloc) was replaced by Taiwan credit
+# default, whose map shows its suggested changes far better (testing/dataset_fit.py).
+APP_TOPICS = ("pima", "taiwan", "cancer")
+DATASETS = sorted((d for d in DATASET_CHOICES if d["key"] in APP_TOPICS),
+                  key=lambda d: APP_TOPICS.index(d["key"]))
 
 
 def _models(dataset_key, eps):
@@ -151,6 +156,13 @@ def _setup(dataset_key, eps):
     )
     _VIEWS[key] = setup
     return setup
+
+
+def _on_map(lens, change):
+    size = float(np.linalg.norm(change))
+    if size < 1e-9 or not lens.is_linear:
+        return 1.0
+    return round(float(np.linalg.norm(lens.comp @ change)) / size, 3)
 
 
 def _theta_line(lens, theta, bounds):
@@ -318,6 +330,10 @@ def _panel(setup, which, x0):
         # this model (quick); the search then stops at its best attempt.
         "safe_ok": bool(rob_cf >= MARGIN - 1e-3),
         "quick_ok": bool(-logit_std >= MARGIN - 1e-3),
+        # How much of each change lands on the flat map (the rest is in values the
+        # map can't show), so the page can say when the picture undersells it.
+        "quick_on_map": _on_map(lens, cf_std - x0),
+        "safe_on_map": _on_map(lens, cf_rob - x0),
         "cost_std": float(np.linalg.norm(cf_std - x0)),
         "cost_rob": float(np.linalg.norm(cf_rob - x0)),
         "already_robust": bool(rob_x0 >= 0),

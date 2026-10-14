@@ -75,8 +75,10 @@ api/index.py         Vercel entry point; loads backend/api/index.py
   where the person starts), so there are no negative counts or percentages over 100.
 - Each model reports `quick_ok` (the quickest change flips it) and `safe_ok` (the safest change
   convinces every model that fits the data about as well). When one is false, the page says so
-  instead of showing it. On Credit the simple model has no safe change: with the external risk
-  score and account ages locked, no change to the rest convinces every good model.
+  instead of showing it. (On the old Credit topic the simple model never had a safe change:
+  with the external risk score and account ages locked, nothing else convinced every model.)
+- Each change also reports how much of it lands on the flat map (`quick_on_map`,
+  `safe_on_map`); under 50% the page notes that the arrow may look short of the line.
 
 ## Deploying to Vercel
 
@@ -104,4 +106,14 @@ over HTTPS), and repeated failed sign-ins are throttled per email and per IP.
 
 ## Datasets
 
-Pima diabetes, FICO HELOC, breast cancer (WDBC).
+Pima diabetes, Taiwan credit card default (shown as "Credit card"), breast cancer (WDBC).
+The topics are listed in `APP_TOPICS` in `backend/engine/cf_core.py`; each needs a saved
+model in `backend/engine/precomputed/` (`uv run --with pandas python backend/precompute.py
+<key>`, so the saved model uses the same pinned versions as the site).
+
+FICO HELOC ("Credit") was taken off the site on 2026-10-14. Its two inquiry counts are
+near-duplicates (r = 0.99), so the model's main direction was their difference, which
+the map can't show: the map showed 40% of the model and drew suggested changes on the
+correct side of the strictest model's line only 12% of the time. Dropping the duplicate
+helped (47%) but the simple model still had no safe change for anyone. Taiwan scored
+best of the remaining datasets; `testing/dataset_fit.py` compares them.

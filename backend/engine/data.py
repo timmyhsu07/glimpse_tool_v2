@@ -70,6 +70,37 @@ FEATURE_META = {
                                   "Percent of accounts that carry a balance"),
     },
     "cancer": {},
+    "taiwan": {
+        "x1": ("Credit limit", "NT$", "Amount of credit given, in New Taiwan dollars"),
+        "x2": ("Sex", "code", "1 = male, 2 = female"),
+        "x3": ("Education", "code", "1 = graduate school, 2 = university, 3 = high school, 4 = other"),
+        "x4": ("Marital status", "code", "1 = married, 2 = single, 3 = other"),
+        "x5": ("Age", "years", "Age"),
+        "x6": ("Months late, Sep", "months",
+                 "How late the Sep payment was (-1 = on time, 0 = paid the minimum, -2 = nothing owed)"),
+        "x7": ("Months late, Aug", "months",
+                 "How late the Aug payment was (-1 = on time, 0 = paid the minimum, -2 = nothing owed)"),
+        "x8": ("Months late, Jul", "months",
+                 "How late the Jul payment was (-1 = on time, 0 = paid the minimum, -2 = nothing owed)"),
+        "x9": ("Months late, Jun", "months",
+                 "How late the Jun payment was (-1 = on time, 0 = paid the minimum, -2 = nothing owed)"),
+        "x10": ("Months late, May", "months",
+                 "How late the May payment was (-1 = on time, 0 = paid the minimum, -2 = nothing owed)"),
+        "x11": ("Months late, Apr", "months",
+                 "How late the Apr payment was (-1 = on time, 0 = paid the minimum, -2 = nothing owed)"),
+        "x12": ("Bill, Sep", "NT$", "Amount on the Sep statement"),
+        "x13": ("Bill, Aug", "NT$", "Amount on the Aug statement"),
+        "x14": ("Bill, Jul", "NT$", "Amount on the Jul statement"),
+        "x15": ("Bill, Jun", "NT$", "Amount on the Jun statement"),
+        "x16": ("Bill, May", "NT$", "Amount on the May statement"),
+        "x17": ("Bill, Apr", "NT$", "Amount on the Apr statement"),
+        "x18": ("Paid, Sep", "NT$", "Amount paid in Sep"),
+        "x19": ("Paid, Aug", "NT$", "Amount paid in Aug"),
+        "x20": ("Paid, Jul", "NT$", "Amount paid in Jul"),
+        "x21": ("Paid, Jun", "NT$", "Amount paid in Jun"),
+        "x22": ("Paid, May", "NT$", "Amount paid in May"),
+        "x23": ("Paid, Apr", "NT$", "Amount paid in Apr"),
+    },
 }
 
 
@@ -217,6 +248,9 @@ def load_pima(path=None):
 _HELOC_SENTINELS = [-7, -8, -9]
 
 
+HELOC_DUPLICATES = ("NumInqLast6Mexcl7days",)
+
+
 def load_heloc(path=None, random_state=0, balance=True):
     """Load and clean the FICO HELOC data. Label 1 is bad risk."""
     if path is None:
@@ -229,6 +263,9 @@ def load_heloc(path=None, random_state=0, balance=True):
 
     topk = df[feat].isna().mean().nlargest(3).index.tolist()
     df.drop(columns=topk, inplace=True)
+    # NumInqLast6Mexcl7days repeats NumInqLast6M (r = 0.99, equal for most people);
+    # together they get large opposite weights and hide the model from the map.
+    df.drop(columns=[c for c in HELOC_DUPLICATES if c in df.columns], inplace=True)
     feat = [c for c in df.columns if c != target]
 
     df = df.loc[df[feat].isna().mean(axis=1) <= 0.40].copy()
