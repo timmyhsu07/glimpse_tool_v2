@@ -145,6 +145,9 @@ def _setup(dataset_key, eps):
         lin_boundary=lin_boundary, lin_fan=lin_fan,
         mlp_boundary=mlp_boundary, mlp_fan=mlp_fan,
         scatter_idx=scatter_idx, scatter_info=scatter_info,
+        # Suggested changes stay within what the data has seen (no negative
+        # counts, no percentages over 100).
+        limits=(data.X.min(axis=0), data.X.max(axis=0)),
     )
     _VIEWS[key] = setup
     return setup
@@ -265,12 +268,12 @@ def _panel(setup, which, x0):
     """Build one model panel for a query."""
     lens, bounds = setup["lens"], setup["bounds"]
     g = setup["grids"]
-    fixed = setup["fixed"]
+    fixed, limits = setup["fixed"], setup["limits"]
 
     if which == "linear":
         model, ell = setup["lin"], setup["lin_ell"]
-        cf_std = ell.standard_cf(x0, TARGET_CLASS, margin=MARGIN, fixed=fixed)
-        cf_rob = ell.robust_cf(x0, TARGET_CLASS, margin=MARGIN, fixed=fixed)
+        cf_std = ell.standard_cf(x0, TARGET_CLASS, margin=MARGIN, fixed=fixed, limits=limits)
+        cf_rob = ell.robust_cf(x0, TARGET_CLASS, margin=MARGIN, fixed=fixed, limits=limits)
         theta_w = ell.worst_model(cf_rob, TARGET_CLASS)
         if lens.is_linear:
             worst_lines = [ln for ln in [_theta_line(lens, theta_w, bounds)]
@@ -279,16 +282,18 @@ def _panel(setup, which, x0):
             worst_lines = _contour_lines(g["GXc"], g["GYc"], g["Xc_hi"], theta_w)
         logit_x0 = float(model.logit(x0)[0])
         logit_cf = float(model.logit(cf_rob)[0])
+        logit_std = float(model.logit(cf_std)[0])
         rob_x0 = float(ell.robust_logit(x0, TARGET_CLASS)[0])
         rob_cf = float(ell.robust_logit(cf_rob, TARGET_CLASS)[0])
     else:
         mlp = setup["mlp"]
-        cf_std = mlp.standard_cf(x0, TARGET_CLASS, margin=MARGIN, fixed=fixed)
-        cf_rob = mlp.robust_cf(x0, TARGET_CLASS, margin=MARGIN, fixed=fixed)
+        cf_std = mlp.standard_cf(x0, TARGET_CLASS, margin=MARGIN, fixed=fixed, limits=limits)
+        cf_rob = mlp.robust_cf(x0, TARGET_CLASS, margin=MARGIN, fixed=fixed, limits=limits)
         theta_w = mlp.worst_model(cf_rob, TARGET_CLASS)
         worst_lines = _contour_lines(g["GXc"], g["GYc"], g["H_grid"], theta_w)
         logit_x0 = float(mlp.logit(x0[None, :])[0])
         logit_cf = float(mlp.logit(cf_rob[None, :])[0])
+        logit_std = float(mlp.logit(cf_std[None, :])[0])
         rob_x0 = float(mlp.robust_logit(x0[None, :], TARGET_CLASS)[0])
         rob_cf = float(mlp.robust_logit(cf_rob[None, :], TARGET_CLASS)[0])
 
@@ -309,6 +314,10 @@ def _panel(setup, which, x0):
         "p_bad_worst_cf": _sigmoid(-rob_cf),
         "robust_margin_x0": rob_x0,
         "robust_margin_cf": rob_cf,
+        # False when no allowed change convinces every good model (safe) or even
+        # this model (quick); the search then stops at its best attempt.
+        "safe_ok": bool(rob_cf >= MARGIN - 1e-3),
+        "quick_ok": bool(-logit_std >= MARGIN - 1e-3),
         "cost_std": float(np.linalg.norm(cf_std - x0)),
         "cost_rob": float(np.linalg.norm(cf_rob - x0)),
         "already_robust": bool(rob_x0 >= 0),

@@ -69,5 +69,43 @@ class SaveListTests(AuthTests):
 
 del AuthTests
 
+
+
+class SafeChangeTests(unittest.TestCase):
+    """A "safe change" is only offered when every good model is convinced."""
+
+    def test_safe_ok_matches_the_worst_case_margin(self):
+        for ds in ("pima", "heloc", "cancer"):
+            _, scene = index.route("GET", "/api/scene", f"dataset={ds}", None, {})
+            for key in ("linear", "mlp"):
+                m = scene["panels"][key]["metrics"]
+                self.assertEqual(m["safe_ok"], m["robust_margin_cf"] >= 0.1 - 1e-3, (ds, key))
+
+    def test_suggested_values_stay_within_what_the_data_has_seen(self):
+        for ds in ("pima", "heloc", "cancer"):
+            _, out = people({"dataset": ds, "people": [{}]})
+            feats = {f["name"]: f for f in out["features"]}
+            _, scene = index.route("GET", "/api/scene", f"dataset={ds}", None, {})
+            for r in scene["deltas"]:
+                f = feats[r["name"]]
+                lo, hi = min(f["min"], r["x0_real"]), max(f["max"], r["x0_real"])
+                for key in ("linear", "mlp", "linear_quick", "mlp_quick"):
+                    v = r[key]["cf_real"]
+                    self.assertTrue(lo - 1e-3 <= v <= hi + 1e-3, (ds, r["name"], key, v))
+
+    def test_every_model_says_whether_its_changes_work(self):
+        _, scene = index.route("GET", "/api/scene", "dataset=cancer", None, {})
+        for key in ("linear", "mlp"):
+            m = scene["panels"][key]["metrics"]
+            self.assertIn("quick_ok", m)
+            self.assertTrue(m["quick_ok"])
+
+    def test_credit_has_no_safe_change_with_the_locked_values(self):
+        _, scene = index.route("GET", "/api/scene", "dataset=heloc", None, {})
+        self.assertFalse(scene["panels"]["linear"]["metrics"]["safe_ok"])
+        _, scene = index.route("GET", "/api/scene", "dataset=pima", None, {})
+        self.assertTrue(scene["panels"]["linear"]["metrics"]["safe_ok"])
+
+
 if __name__ == "__main__":
     unittest.main()

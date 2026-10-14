@@ -44,7 +44,7 @@
     <div id="hero-maps">
       <div class="map-head">
         <h2 class="hero-h">Map <span id="map-tip"></span>
-          <span class="sub">Click anywhere</span></h2>
+          <span class="sub">Click anywhere · drag a box to zoom</span></h2>
         <label class="switch" id="old-graph-switch">
           <input type="checkbox" id="old-graph"> Old GLIMPSE graph (test)</label>
       </div>
@@ -55,7 +55,11 @@
           <button type="button" data-view="both">Both</button>
         </div>
         <button type="button" class="tool-btn" id="find-me">Find me</button>
-        <button type="button" class="tool-btn" id="reset-zoom">Reset zoom</button>
+        <span class="zoom-group" role="group" aria-label="Zoom">
+          <button type="button" class="tool-btn zoom-btn" id="zoom-out" aria-label="Zoom out">−</button>
+          <button type="button" class="tool-btn zoom-btn" id="zoom-in" aria-label="Zoom in">+</button>
+          <button type="button" class="tool-btn" id="reset-zoom">Reset zoom</button>
+        </span>
         <label class="switch" id="disputed-switch" hidden>
           <input type="checkbox" id="show-disputed"> Most disputed</label>
       </div>

@@ -539,11 +539,16 @@ table.chg tr.immrow .fname-cell { color: var(--muted); }
 .tool-card { border: 1px solid var(--line); border-radius: 8px; padding: 0.4rem 0.9rem 0.8rem;
   background: var(--card); }
 .tool-card h3 { font-size: 0.98rem; }
-.wi-row { display: grid; grid-template-columns: 9rem 1fr 6.5rem; align-items: center;
+.wi-row { display: grid; grid-template-columns: 9rem 1fr 9.5rem; align-items: center;
   gap: 0.6rem; margin: 0.35rem 0; font-size: 0.86rem; }
 .wi-name { font-weight: 600; }
 .wi-row input[type=range] { width: 100%; accent-color: #5834c4; }
-.wi-val { text-align: right; font-variant-numeric: tabular-nums; }
+.wi-val { display: flex; align-items: center; justify-content: flex-end; gap: 0.3rem;
+  font-variant-numeric: tabular-nums; }
+.wi-num { width: 4.6rem; font: inherit; text-align: right; padding: 0.15rem 0.3rem;
+  border: 1px solid var(--line); border-radius: 4px; background: var(--input); color: var(--ink); }
+.wi-num:hover { border-color: var(--muted); }
+.wi-num:focus { outline: 2px solid #5834c4; outline-offset: 0; border-color: #5834c4; }
 .whatif-result { min-height: 1.4em; margin: 0.5rem 0; font-size: 0.92rem; }
 .tool-buttons { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; margin: 0.4rem 0 0; }
 .tool-buttons button { font: inherit; font-size: 0.86rem; padding: 0.3rem 0.8rem; cursor: pointer;
@@ -554,7 +559,7 @@ table.chg tr.immrow .fname-cell { color: var(--muted); }
   font-size: 0.9rem; cursor: pointer; }
 .cmp-links { display: flex; gap: 0.9rem; flex-wrap: wrap; margin: 0.4rem 0 0; }
 .cmp-links a { font-size: 0.86rem; color: var(--good); }
-@media (max-width: 600px) { .wi-row { grid-template-columns: 1fr 5.5rem; }
+@media (max-width: 600px) { .wi-row { grid-template-columns: 1fr 9.5rem; }
   .wi-row input[type=range] { grid-column: 1 / -1; grid-row: 2; } }
 
 /* Compare */
@@ -630,3 +635,9 @@ table.chg tr.immrow .fname-cell { color: var(--muted); }
 .toast[hidden] { display: none; }
 .toast button { font: inherit; font-weight: 700; color: var(--bg); background: none;
   border: 1px solid currentColor; border-radius: 4px; padding: 0.1rem 0.5rem; cursor: pointer; }
+
+.zoom-group { display: inline-flex; gap: 0.3rem; align-items: center; }
+.zoom-btn { min-width: 2rem; padding: 0.2rem 0.55rem; font-size: 1rem; line-height: 1; }
+.wi-num.out { border-color: var(--bad); background: var(--field); }
+.wi-val .sub { min-width: 3.4rem; text-align: left; }
+.reco-none { font-size: 0.92rem; margin: 0.2rem 0; }
