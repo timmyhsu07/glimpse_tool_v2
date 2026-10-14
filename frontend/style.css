@@ -231,7 +231,8 @@ table.chg tr.immrow .fname-cell { color: var(--muted); }
 
 /* Account */
 
-#auth { display: flex; justify-content: center; margin: 2.2rem 0 1rem; }
+#auth { display: flex; justify-content: center; align-items: flex-start; flex-wrap: wrap;
+  gap: 1.2rem; margin: 2.2rem 0 1rem; }
 .auth-card {
   width: 100%; max-width: 26rem; background: var(--card);
   border: 1px solid var(--line); border-top: 3px solid var(--good);
@@ -494,3 +495,15 @@ table.chg tr.immrow .fname-cell { color: var(--muted); }
   #plots.single .plot { height: 420px; }
   .vhead { font-size: 1.35rem; }
 }
+
+/* Shared testing account, deliberately plain: a work-in-progress note */
+.wip-card { width: 14rem; padding: 0.7rem 0.9rem; border: 1.5px dashed var(--muted);
+  border-radius: 4px; font: 0.82rem/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--ink); background: transparent; }
+.wip-card[hidden] { display: none; }
+.wip-tag { color: var(--muted); margin-bottom: 0.35rem; }
+.wip-row span { display: inline-block; width: 4.6rem; color: var(--muted); }
+.wip-row code { font: inherit; }
+.wip-btn { margin-top: 0.5rem; font: inherit; padding: 0.15rem 0.6rem; cursor: pointer;
+  border: 1px dashed var(--muted); border-radius: 3px; background: none; color: var(--ink); }
+.wip-btn:hover { border-style: solid; }

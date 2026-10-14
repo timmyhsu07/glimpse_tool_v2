@@ -134,6 +134,22 @@ class AccountTests(AuthTests):
                 code, _, _ = call("POST", "/api/forgot", {"email": "ada@example.com"})
         self.assertEqual(code, 503)
 
+    # ---- the shared test account
+
+    def test_shared_test_account_cannot_be_changed(self):
+        ck = session_cookie(call("POST", "/api/register",
+                                 {"email": "test@ex.com", "password": "correct horse"})[2])
+        self.assertEqual(call("POST", "/api/account/password",
+                              {"current": "correct horse", "new": NEW}, cookie=ck)[0], 403)
+        self.assertEqual(call("POST", "/api/account/delete",
+                              {"password": "correct horse"}, cookie=ck)[0], 403)
+        self.assertEqual(call("POST", "/api/forgot", {"email": "test@ex.com"})[0], 403)
+        self.assertEqual(self.sent, [])
+        self.assertEqual(call("POST", "/api/saved", {"dataset": "pima", "name": "a",
+                                                     "values": {"Glucose": 1}}, cookie=ck)[0], 200)
+        self.assertEqual(call("POST", "/api/login", {"email": "test@ex.com",
+                                                     "password": "correct horse"})[0], 200)
+
 
 def auth_msg():
     import auth
