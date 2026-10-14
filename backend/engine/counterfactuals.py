@@ -87,14 +87,35 @@ class RashomonEllipsoid:
         return (self.Q_inv_sqrt @ (u * r).T).T + self.theta
 
     def standard_cf(self, x0, target_class=1, t=0.0, margin=0.0,
-                    hessian_reg=False, fixed=None):
-        """Return the closest point that flips the fitted model."""
+                    hessian_reg=False, fixed=None, limits=None):
+        """Return the closest point that flips the fitted model.
+
+        ``limits`` = (low, high) arrays keep each value inside a range (e.g. what
+        the data has seen); the result then may not reach the target.
+        """
         x0 = np.asarray(x0, float)
         s = 1.0 if target_class == 1 else -1.0
         target_logit = t + s * margin
         logit = self.w @ x0 + self.b
         if s * (target_logit - logit) <= 0:
             return x0.copy()
+        if limits is not None and not hessian_reg:
+            # Move along w; a value that hits its limit stays there and the rest carry on.
+            lo, hi = box(x0, fixed, limits)
+            x, free = x0.copy(), lo < hi
+            for _ in range(len(x0)):
+                gap = target_logit - (self.w @ x + self.b)
+                wf = self.w * free
+                denom = float(wf @ wf)
+                if s * gap <= 1e-12 or denom < 1e-12:
+                    break
+                xn = x + gap / denom * wf
+                hit = (xn < lo) | (xn > hi)
+                x = np.clip(xn, lo, hi)
+                if not hit.any():
+                    break
+                free &= ~hit
+            return x
         if hessian_reg:
             step_dir = self.H_xx_inv @ self.w
             return x0 + (target_logit - logit) / (self.w @ step_dir) * step_dir
@@ -107,7 +128,7 @@ class RashomonEllipsoid:
         return x0 + (target_logit - logit) / (self.w @ self.w) * self.w
 
     def robust_cf(self, x0, target_class=1, t=0.0, margin=0.0,
-                  hessian_reg=False, fixed=None):
+                  hessian_reg=False, fixed=None, limits=None):
         """Return the closest point with the requested worst-case margin."""
         x0 = np.asarray(x0, float)
         s = 1.0 if target_class == 1 else -1.0
@@ -129,16 +150,32 @@ class RashomonEllipsoid:
             jac = lambda x: 2.0 * (x - x0)
 
         bnds = None
-        if fixed is not None:
-            fixed = np.asarray(fixed, bool)
-            bnds = [(x0[j], x0[j]) if fixed[j] else (None, None)
-                    for j in range(len(x0))]
+        if fixed is not None or limits is not None:
+            bnds = scipy_bounds(*box(x0, fixed, limits))
 
-        x_init = self.standard_cf(x0, target_class, t, margin, hessian_reg, fixed)
+        x_init = self.standard_cf(x0, target_class, t, margin, hessian_reg, fixed, limits)
         res = minimize(obj, x_init, jac=jac, method="SLSQP", bounds=bnds,
                        constraints=[{"type": "ineq", "fun": con, "jac": con_grad}],
                        options={"maxiter": 200, "ftol": 1e-9})
         return res.x
+
+
+def box(x0, fixed=None, limits=None):
+    """Per-value (low, high): fixed values stay put; the rest stay inside
+    ``limits``, widened to include where the person starts."""
+    x0 = np.asarray(x0, float)
+    lo, hi = np.full(len(x0), -np.inf), np.full(len(x0), np.inf)
+    if limits is not None:
+        lo, hi = np.minimum(limits[0], x0), np.maximum(limits[1], x0)
+    if fixed is not None:
+        f = np.asarray(fixed, bool)
+        lo, hi = np.where(f, x0, lo), np.where(f, x0, hi)
+    return lo, hi
+
+
+def scipy_bounds(lo, hi):
+    return [(None if np.isinf(a) else float(a), None if np.isinf(b) else float(b))
+            for a, b in zip(lo, hi)]
 
 
 def _aug(X):

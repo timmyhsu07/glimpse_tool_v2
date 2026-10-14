@@ -68,6 +68,16 @@ api/index.py         Vercel entry point; loads backend/api/index.py
 | POST | `/api/forgot` | `{email}`; emails a one-time reset link (1 hour) |
 | POST | `/api/reset` | `{token, password}`; sets the new password and signs in |
 
+## How suggested changes work
+
+- Values in the locked list per topic (`IMMUTABLE` in `backend/engine/cf_core.py`) never change.
+- Every other value stays within the lowest and highest seen in the data (widened to include
+  where the person starts), so there are no negative counts or percentages over 100.
+- Each model reports `quick_ok` (the quickest change flips it) and `safe_ok` (the safest change
+  convinces every model that fits the data about as well). When one is false, the page says so
+  instead of showing it. On Credit the simple model has no safe change: with the external risk
+  score and account ages locked, no change to the rest convinces every good model.
+
 ## Deploying to Vercel
 
 Live at **https://glimpse-dev-hazel.vercel.app** (Vercel project `glimpse-dev`, separate

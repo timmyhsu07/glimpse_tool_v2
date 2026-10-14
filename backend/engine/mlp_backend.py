@@ -3,7 +3,7 @@ import numpy as np
 from scipy.optimize import minimize
 from sklearn.neural_network import MLPClassifier
 
-from counterfactuals import RashomonEllipsoid, _sigmoid
+from counterfactuals import RashomonEllipsoid, _sigmoid, box, scipy_bounds
 
 N_BISECT = 40
 
@@ -86,8 +86,9 @@ class MLPBackend:
                 lo = mid
         return x0 + hi * (anchor - x0)
 
-    def _closest_feasible(self, x0, cfun, cgrad, fixed=None):
-        """Find the closest feasible input, optionally fixing selected fields."""
+    def _closest_feasible(self, x0, cfun, cgrad, fixed=None, limits=None):
+        """Find the closest feasible input, optionally fixing selected fields and
+        keeping the rest inside ``limits``."""
         x0 = np.asarray(x0, float)
         if cfun(x0)[0] >= 0:
             return x0.copy()
@@ -95,10 +96,10 @@ class MLPBackend:
         if x_init is None:
             return x0.copy()
         bnds = None
-        if fixed is not None:
-            fixed = np.asarray(fixed, bool)
-            bnds = [(x0[j], x0[j]) if fixed[j] else (None, None)
-                    for j in range(len(x0))]
+        if fixed is not None or limits is not None:
+            lo, hi = box(x0, fixed, limits)
+            x_init = np.clip(x_init, lo, hi)
+            bnds = scipy_bounds(lo, hi)
         res = minimize(lambda x: np.sum((x - x0) ** 2), x_init,
                        jac=lambda x: 2.0 * (x - x0), method="SLSQP", bounds=bnds,
                        constraints=[{"type": "ineq",
@@ -108,17 +109,18 @@ class MLPBackend:
         if res.success and cfun(res.x[None, :])[0] > -1e-6 and \
                 np.linalg.norm(res.x - x0) <= np.linalg.norm(x_init - x0) + 1e-9:
             return res.x
-        return x_init
+        # Keep whichever attempt gets closer to the target.
+        return res.x if cfun(res.x[None, :])[0] > cfun(x_init[None, :])[0] else x_init
 
-    def standard_cf(self, x0, target_class=0, margin=0.0, fixed=None):
+    def standard_cf(self, x0, target_class=0, margin=0.0, fixed=None, limits=None):
         """Return the closest input that flips the fitted MLP."""
         s = 1.0 if target_class == 1 else -1.0
         cfun = lambda X: s * self.logit(X) - margin
         cgrad = lambda x: s * self._logit_grad(x)
-        return self._closest_feasible(x0, cfun, cgrad, fixed=fixed)
+        return self._closest_feasible(x0, cfun, cgrad, fixed=fixed, limits=limits)
 
-    def robust_cf(self, x0, target_class=0, margin=0.0, fixed=None):
+    def robust_cf(self, x0, target_class=0, margin=0.0, fixed=None, limits=None):
         """Return the closest input whose worst-case logit clears the threshold."""
         cfun = lambda X: self.robust_logit(X, target_class) - margin
         cgrad = lambda x: self._robust_grad(x, target_class)
-        return self._closest_feasible(x0, cfun, cgrad, fixed=fixed)
+        return self._closest_feasible(x0, cfun, cgrad, fixed=fixed, limits=limits)

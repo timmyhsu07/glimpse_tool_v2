@@ -127,8 +127,10 @@ function buildPanelTraces(scene, which) {
     hovertemplate: `${qName}<extra></extra>`,
   });
   // Ink, not purple, so the ✕ stays visible on the violet density map.
-  traces.push(markerTrace(cf.standard, isDark() ? "#f2f2f2" : "#111111", "quick change", "x", 10));
-  traces.push(markerTrace(cf.ellice, COLORS.ell, "safe change", "square", 9));
+  if (quickOk(scene, which))
+    traces.push(markerTrace(cf.standard, isDark() ? "#f2f2f2" : "#111111", "quick change", "x", 10));
+  if (safeOk(scene, which))
+    traces.push(markerTrace(cf.ellice, COLORS.ell, "safe change", "square", 9));
   traces.push({
     type: "scatter", mode: "markers", x: [null], y: [null], name: "what if",
     marker: { size: 15, symbol: "star-open", color: isDark() ? "#ffd166" : "#a15c00",
@@ -137,6 +139,17 @@ function buildPanelTraces(scene, which) {
   });
   return traces;
 }
+
+// Whether the search found a change that convinces every good model. When it
+// didn't (it can't, e.g. on Credit with the locked values), nothing is shown as "safe".
+const safeOk = (scene, which) => scene.panels[which].metrics.safe_ok !== false;
+const quickOk = (scene, which) => scene.panels[which].metrics.quick_ok !== false;
+const kindOk = (scene, which, kind) => (kind === "safe" ? safeOk : quickOk)(scene, which);
+// Where the map's arrow points: the safe change if there is one, else the quick one,
+// else nowhere.
+const arrowTarget = (scene, which) =>
+  safeOk(scene, which) ? scene.panels[which].cfs.ellice
+    : quickOk(scene, which) ? scene.panels[which].cfs.standard : null;
 
 // The dot map ("old GLIMPSE graph"): one dot per person, with a hover card.
 function dotTraces(scene, legend) {
@@ -208,8 +221,9 @@ function viewRanges(div, scene, which) {
 
 function defaultRanges(scene, which) {
   const q = scene.query, cf = scene.panels[which].cfs;
-  const xs = [scene.bounds.x[0], scene.bounds.x[1], q.x, cf.ellice.x];
-  const ys = [scene.bounds.y[0], scene.bounds.y[1], q.y, cf.ellice.y];
+  const to = arrowTarget(scene, which) || q;
+  const xs = [scene.bounds.x[0], scene.bounds.x[1], q.x, to.x];
+  const ys = [scene.bounds.y[0], scene.bounds.y[1], q.y, to.y];
   const grow = (lo, hi) => [lo - 0.03 * (hi - lo), hi + 0.03 * (hi - lo)];
   return [grow(Math.min(...xs), Math.max(...xs)), grow(Math.min(...ys), Math.max(...ys))];
 }
@@ -233,12 +247,12 @@ function panelLayout(scene, which) {
     hoverdistance: DOT_PX,
     // keep the user's zoom while clicking around the same dataset
     uirevision: scene.dataset,
-    annotations: [{
-      x: cf.ellice.x, y: cf.ellice.y, ax: q.x, ay: q.y,
+    annotations: arrowTarget(scene, which) ? [{
+      x: arrowTarget(scene, which).x, y: arrowTarget(scene, which).y, ax: q.x, ay: q.y,
       xref: "x", yref: "y", axref: "x", ayref: "y",
       showarrow: true, arrowhead: 3, arrowsize: 1.2, arrowwidth: 1.6,
       arrowcolor: "#111", opacity: 0.85, text: "",
-    }],
+    }] : [],
   };
 }
 
@@ -401,6 +415,8 @@ function topChanges(scene, which, kind, n) {
     }
     const r = it.r, d = r[key];
     if (r.immutable || Math.abs(d.delta_std) <= 0.05) continue;
+    // A change too small to show (e.g. 1.3 inquiries shown as 1) says nothing.
+    if (fmtVal(r.x0_real, r.integer) === fmtVal(d.cf_real, r.integer)) continue;
     items.push({ name: r.name, label: r.label, unit: r.unit || "", integer: r.integer,
                  before: fmtVal(r.x0_real, r.integer), after: fmtVal(d.cf_real, r.integer),
                  afterValue: d.cf_real, up: d.delta_real > 0,
@@ -434,6 +450,12 @@ function renderRecommend(scene) {
     if (!m.pred_bad)
       return `<div class="reco-col"><div class="reco-h">${name}</div>
         <p class="reco-ok">✓ Already ${G.esc(goodName)}. Nothing to change.</p></div>`;
+    if (!kindOk(scene, which, recoKind))
+      return `<div class="reco-col"><div class="reco-h">${name}</div>
+        <p class="reco-none">${recoKind === "safe"
+          ? `No change you can make works for every good model.
+             <button type="button" class="link-btn" data-kind="quick">See the quickest change</button>`
+          : "No change within realistic values flips this model."}</p></div>`;
     const cards = topChanges(scene, which, recoKind, 3);
     return `<div class="reco-col"><div class="reco-h">${name}</div>
       <ul class="chg-cards">${cards.map(changeCard).join("") ||
@@ -442,12 +464,19 @@ function renderRecommend(scene) {
   renderPlan(scene);
 }
 
-for (const t of document.querySelectorAll(".reco-tabs [role=tab]")) {
-  t.addEventListener("click", () => {
-    recoKind = t.dataset.kind;
-    if (lastScene) renderRecommend(lastScene);
-  });
+function setRecoKind(kind) {
+  recoKind = kind;
+  if (lastScene) {
+    renderRecommend(lastScene);
+    renderChanges(lastScene);
+  }
 }
+for (const t of document.querySelectorAll(".reco-tabs [role=tab]"))
+  t.addEventListener("click", () => setRecoKind(t.dataset.kind));
+el("reco-lists").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-kind]");
+  if (b) setRecoKind(b.dataset.kind);
+});
 
 // The current person's values in real units (blanks filled with typical values).
 function personValues(scene) {
@@ -492,25 +521,50 @@ function renderWhatif(scene) {
   el("whatif-sliders").innerHTML = whatifFeatures(scene).map(({ r, f }) => {
     const lo = Math.min(f.p5 ?? f.min, r.x0_real), hi = Math.max(f.p95 ?? f.max, r.x0_real);
     const step = f.integer ? 1 : (hi - lo) / 100;
-    return `<label class="wi-row"><span class="wi-name">${G.esc(r.label)}</span>
+    return `<div class="wi-row" data-name="${G.esc(r.name)}" data-int="${f.integer}"
+      data-min="${f.min}" data-max="${f.max}">
+      <span class="wi-name">${G.esc(r.label)}</span>
       <input type="range" min="${lo}" max="${hi}" step="${step}" value="${r.x0_real}"
-             data-name="${G.esc(r.name)}" data-int="${f.integer}" data-start="${r.x0_real}"
-             aria-label="${G.esc(r.label)}">
-      <output class="wi-val">${fmtVal(r.x0_real, f.integer)}${f.unit ? " " + G.esc(f.unit) : ""}</output></label>`;
+             aria-label="${G.esc(r.label)} slider">
+      <span class="wi-val"><input type="number" class="wi-num" step="${f.integer ? 1 : "any"}"
+             value="${fmtVal(r.x0_real, f.integer).replace(/,/g, "")}" aria-label="${G.esc(r.label)} value">
+        ${f.unit ? `<span class="sub">${G.esc(f.unit)}</span>` : ""}</span></div>`;
   }).join("");
   el("whatif-result").innerHTML = `<span class="sub">Drag a slider.</span>`;
   moveGhost(null);
 }
 
+// Drag a slider or type in the number box; each keeps the other in step.
 el("whatif-sliders").addEventListener("input", (e) => {
-  const inp = e.target.closest("input[type=range]");
-  if (!inp || !lastScene) return;
-  const v = Number(inp.value), isInt = inp.dataset.int === "true";
-  const unit = inp.nextElementSibling.textContent.split(" ").slice(1).join(" ");
-  inp.nextElementSibling.textContent = fmtVal(v, isInt) + (unit ? " " + unit : "");
-  whatifValues[inp.dataset.name] = isInt ? Math.round(v) : v;
+  const row = e.target.closest(".wi-row");
+  if (!row || !lastScene) return;
+  const slider = row.querySelector("input[type=range]"), box = row.querySelector(".wi-num");
+  const isInt = row.dataset.int === "true";
+  let v;
+  if (e.target === slider) {
+    v = Number(slider.value);
+    box.value = fmtVal(v, isInt).replace(/,/g, "");
+  } else {
+    if (box.value.trim() === "" || !isFinite(Number(box.value))) return;
+    v = Number(box.value);
+    // A typed value past the slider's ends stretches the slider to fit.
+    if (v < Number(slider.min)) slider.min = v;
+    if (v > Number(slider.max)) slider.max = v;
+    slider.value = v;
+  }
+  const out = v < Number(row.dataset.min) || v > Number(row.dataset.max);
+  box.classList.toggle("out", out);
+  box.title = out ? `Outside the data (${row.dataset.min}–${row.dataset.max})` : "";
+  whatifValues[row.dataset.name] = isInt ? Math.round(v) : v;
   clearTimeout(whatifTimer);
-  whatifTimer = setTimeout(runWhatif, 120);
+  whatifTimer = setTimeout(runWhatif, e.target === slider ? 120 : 350);
+});
+// Enter in a number box updates right away instead of submitting anything.
+el("whatif-sliders").addEventListener("keydown", (e) => {
+  if (e.key !== "Enter" || !e.target.classList.contains("wi-num")) return;
+  e.preventDefault();
+  clearTimeout(whatifTimer);
+  runWhatif();
 });
 
 async function runWhatif() {
@@ -554,7 +608,9 @@ function planKey(scene) {
 }
 
 function renderPlan(scene) {
-  const items = scene.panels.linear.metrics.pred_bad ? topChanges(scene, "linear", recoKind, 5) : [];
+  const noSafe = !kindOk(scene, "linear", recoKind);
+  const items = scene.panels.linear.metrics.pred_bad && !noSafe
+    ? topChanges(scene, "linear", recoKind, 5) : [];
   let ticked = null;
   try { ticked = JSON.parse(localStorage.getItem(planKey(scene)) || "null"); } catch (e) {}
   el("plan-list").innerHTML = items.length ? items.map((c, i) => {
@@ -562,7 +618,10 @@ function renderPlan(scene) {
     return `<li><label class="plan-item"><input type="checkbox" data-i="${i}" ${on ? "checked" : ""}>
       <span><b>${G.esc(c.label)}</b> ${G.esc(c.before)} → <b>${G.esc(c.after)}</b>
       ${c.unit ? G.esc(c.unit) : ""}</span></label></li>`;
-  }).join("") : `<li class="sub">Nothing to plan: already ${G.esc(scene.class_names[0])}.</li>`;
+  }).join("") : `<li class="sub">${noSafe ? (recoKind === "safe"
+    ? "No safe change exists for the simple model. Switch to Quickest change to plan."
+    : "No realistic change flips the simple model.")
+    : "Nothing to plan: already " + G.esc(scene.class_names[0]) + "."}</li>`;
   el("plan-list").dataset.items = JSON.stringify(items);
   el("plan-save").disabled = !items.length;
   el("plan-msg").textContent = "";
@@ -587,8 +646,14 @@ let planTimer = null;
 function updatePlan() {
   if (!lastScene) return;
   const { picked } = planValues();
-  try { localStorage.setItem(planKey(lastScene), JSON.stringify(picked)); } catch (e) {}
-  if (!picked.length) { el("plan-result").innerHTML = `<span class="sub">Tick what you’ll change.</span>`; return; }
+  if (el("plan-list").querySelector("input")) {
+    try { localStorage.setItem(planKey(lastScene), JSON.stringify(picked)); } catch (e) {}
+  }
+  if (!picked.length) {
+    el("plan-result").innerHTML = el("plan-list").querySelector("input")
+      ? `<span class="sub">Tick what you’ll change.</span>` : "";
+    return;
+  }
   clearTimeout(planTimer);
   planTimer = setTimeout(async () => {
     const scene = lastScene;
@@ -656,7 +721,7 @@ function groupRow(label, members) {
   };
   const youCat = active((x) => x.x0_real);
   const per = {};
-  for (const which of ["linear", "mlp"]) {
+  for (const which of ["linear", "mlp", "linear_quick", "mlp_quick"]) {
     const cat = active((x) => x[which].cf_real);
     per[which] = { cat, changed: cat !== youCat,
       mag: Math.max(...members.map((x) => Math.abs(x[which].delta_std))) };
@@ -670,10 +735,14 @@ function groupRow(label, members) {
 
 function renderChanges(scene) {
   const rows = displayRows(scene).sort((a, b) => b.key - a.key);
+  // Columns follow the "Quickest / Safest" tab; "—" where no safe change exists.
+  const col = (which) => (recoKind === "quick" ? which + "_quick" : which);
+  const none = (which) => !kindOk(scene, which, recoKind);
 
   const plainCell = (r, which) => {
     if (r.immutable) return `<td class="fixed">${G.LOCK} can’t change</td>`;
-    const d = r[which];
+    if (none(which)) return `<td class="same">—</td>`;
+    const d = r[col(which)];
     if (Math.abs(d.delta_std) <= 0.02) return `<td class="same">same</td>`;
     const up = d.delta_real > 0, unit = r.unit ? " " + r.unit : "";
     return `<td class="${up ? "up" : "down"}">` +
@@ -683,7 +752,8 @@ function renderChanges(scene) {
   };
   const groupCell = (g, which) => {
     if (g.immutable) return `<td class="fixed">${G.LOCK} can’t change</td>`;
-    const p = g.per[which];
+    if (none(which)) return `<td class="same">—</td>`;
+    const p = g.per[col(which)];
     if (!p.changed) return `<td class="same">same</td>`;
     return `<td class="up"><span class="arrow">→</span>${esc(p.cat)}</td>`;
   };
@@ -708,7 +778,8 @@ function renderChanges(scene) {
   el("changes-table").innerHTML =
     `<table class="chg"><thead><tr>` +
     `<th>Value</th><th>Now</th>` +
-    `<th>After (simple)</th><th>After (flexible)</th>` +
+    `<th>After, ${recoKind === "quick" ? "quickest" : "safest"} (simple)</th>` +
+    `<th>After, ${recoKind === "quick" ? "quickest" : "safest"} (flexible)</th>` +
     `</tr></thead><tbody>${trs}</tbody></table>`;
 }
 
@@ -876,9 +947,11 @@ function updatePanel(scene) {
   renderChanges(scene);
 
   el("d-std-lin").textContent = scene.panels.linear.cfs.standard.distance.toFixed(3);
-  el("d-ell-lin").textContent = scene.panels.linear.cfs.ellice.distance.toFixed(3);
+  el("d-ell-lin").textContent = safeOk(scene, "linear")
+    ? scene.panels.linear.cfs.ellice.distance.toFixed(3) : "none";
   el("d-std-mlp").textContent = scene.panels.mlp.cfs.standard.distance.toFixed(3);
-  el("d-ell-mlp").textContent = scene.panels.mlp.cfs.ellice.distance.toFixed(3);
+  el("d-ell-mlp").textContent = safeOk(scene, "mlp")
+    ? scene.panels.mlp.cfs.ellice.distance.toFixed(3) : "none";
 
   const rows = scene.deltas.map((r) =>
     `<tr><td>${r.label}</td><td>${fmtVal(r.x0_real, r.integer)}` +
@@ -1327,7 +1400,7 @@ async function init() {
 // ---- map tools: graph style, find me, reset zoom, most disputed
 
 el("map-tip").innerHTML = G.tip("Click any spot to see the person who would be there. " +
-  "Drag to zoom in, double-click to zoom out.");
+  "Drag a box to zoom in, or use + and −. Double-click resets.");
 el("tip-linear").innerHTML = G.tip("A straight-line model. Easy to explain.");
 el("tip-mlp").innerHTML = G.tip("A small neural network. Can bend around the data.");
 el("compare-tip").innerHTML = G.tip("Where each number sits among everyone in the data. " +
@@ -1371,6 +1444,24 @@ el("reset-zoom").addEventListener("click", () => {
     Plotly.relayout(plotDivs[which], { "xaxis.range": xr, "yaxis.range": yr });
   }
 });
+// Zoom in or out around the middle of what's on screen; both axes by the same
+// factor, so the map keeps its shape.
+const ZOOM_STEP = 0.7;
+function zoomBy(factor) {
+  if (!plotsReady) return;
+  for (const which of visiblePanels()) {
+    const fl = plotDivs[which]._fullLayout;
+    const scale = (r) => {
+      const c = (r[0] + r[1]) / 2, h = (r[1] - r[0]) / 2 * factor;
+      return [c - h, c + h];
+    };
+    Plotly.relayout(plotDivs[which], { "xaxis.range": scale(fl.xaxis.range),
+                                       "yaxis.range": scale(fl.yaxis.range) });
+  }
+}
+el("zoom-in").addEventListener("click", () => zoomBy(ZOOM_STEP));
+el("zoom-out").addEventListener("click", () => zoomBy(1 / ZOOM_STEP));
+
 el("find-me").addEventListener("click", () => {
   if (!lastScene) return;
   const q = lastScene.query;
