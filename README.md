@@ -106,8 +106,9 @@ over HTTPS), and repeated failed sign-ins are throttled per email and per IP.
 
 ## Datasets
 
-Pima diabetes, Taiwan credit card default (shown as "Credit card"), breast cancer (WDBC).
-The topics are listed in `APP_TOPICS` in `backend/engine/cf_core.py`; each needs a saved
+Pima diabetes and breast cancer (WDBC). Taiwan credit card default ("Credit card") is off
+the site for now; its data and saved model are kept, so adding `"taiwan"` back to `APP_TOPICS`
+brings it back. The topics are listed in `APP_TOPICS` in `backend/engine/cf_core.py`; each needs a saved
 model in `backend/engine/precomputed/` (`uv run --with pandas python backend/precompute.py
 <key>`, so the saved model uses the same pinned versions as the site).
 
@@ -117,3 +118,9 @@ the map can't show: the map showed 40% of the model and drew suggested changes o
 correct side of the strictest model's line only 12% of the time. Dropping the duplicate
 helped (47%) but the simple model still had no safe change for anyone. Taiwan scored
 best of the remaining datasets; `testing/dataset_fit.py` compares them.
+
+Heart disease (Statlog) was also checked. With honest locks (age, sex, chest-pain type, thal,
+major vessels) a safe change exists for only 10% / 38% of people and the map draws changes
+on the correct side 52% of the time; locking only age and sex scores well (60%, 100% / 100%)
+but then suggests changing test results people can't change. Its category codes (chest-pain
+type, thal, slope, ECG result) would also need one-hot encoding before it could be used.

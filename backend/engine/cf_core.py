@@ -34,9 +34,10 @@ _MODELS = {}
 _LENSES = {}
 _VIEWS = {}
 
-# The topics the site offers, in order. Credit (heloc) was replaced by Taiwan credit
-# default, whose map shows its suggested changes far better (testing/dataset_fit.py).
-APP_TOPICS = ("pima", "taiwan", "cancer")
+# The topics the site offers, in order. Credit (heloc) and Taiwan credit default are off
+# the site for now; Taiwan's data and saved model stay, so adding "taiwan" back here
+# (and to the tests) brings it back.
+APP_TOPICS = ("pima", "cancer")
 DATASETS = sorted((d for d in DATASET_CHOICES if d["key"] in APP_TOPICS),
                   key=lambda d: APP_TOPICS.index(d["key"]))
 
