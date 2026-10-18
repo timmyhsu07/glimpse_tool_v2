@@ -75,12 +75,13 @@ Status: [x] done, [~] partly done, [ ] not started.
 
 - [~] Never recommend changes to things people can't change. Today a fixed list per dataset
       (age, pregnancies, family history, …) is held fixed in the search and shown with a lock.
-- [ ] Add an interface where each value can be marked:
+- [x] Add an interface where each value can be marked:
       - can't change (immutable),
       - can only go up (monotonically increasing, e.g. age, number of pregnancies),
       - can only go down (monotonically decreasing),
       - free to change.
       The counterfactual search should then respect these as constraints.
-- [ ] Also keep recommendations inside what is possible. Seen on the credit topic:
+      Done: "What can you change?" on the map page (2026-10-14).
+- [x] Also keep recommendations inside what is possible. Seen on the credit topic:
       "Inquiries (6 mo) 3 → -2 count" and "% accounts never late 70 → 101%". Counts can't be
       negative and percentages can't pass 100, so the search needs real bounds per value.

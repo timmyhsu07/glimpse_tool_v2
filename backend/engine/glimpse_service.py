@@ -20,12 +20,15 @@ def _ensure(dataset, eps):
         with open(path, "rb") as f:
             blob = pickle.load(f)
         cf_core._MODELS[key] = blob["m"]
-        cf_core._LENSES[key] = blob["lens"]
+        # A saved map of another kind is ignored; the right one is fitted on use.
+        if getattr(blob["lens"], "key", "eclipse") == cf_core.MAP_LENS:
+            cf_core._LENSES[key] = blob["lens"]
 
 
-def scene(dataset, eps=EPS, query_id=None, custom=None):
+def scene(dataset, eps=EPS, query_id=None, custom=None, constraints=None):
     _ensure(dataset, eps)
-    return cf_core.get_scene(dataset, eps=eps, query_id=query_id, custom=custom)
+    return cf_core.get_scene(dataset, eps=eps, query_id=query_id, custom=custom,
+                             constraints=constraints)
 
 
 def people(dataset, customs, eps=EPS):

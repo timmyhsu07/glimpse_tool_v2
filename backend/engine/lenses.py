@@ -108,6 +108,18 @@ class EclipseLens:
         }
 
 
+class PCALens(EclipseLens):
+    """Plain PCA: the two directions where people differ most. It is the ECLIPSE
+    blend with all weight on spread, so it shares the exact inverse and grid."""
+    key = "pca"
+    label = "PCA"
+    blurb = ("A straight-line map along the two directions where people differ "
+             "the most. It does not look at the model. Exactly reversible.")
+
+    def __init__(self):
+        super().__init__((1.0, 0.0, 0.0, 0.0))
+
+
 def _select_weights(X_tr, y_tr, w_vec, ell, mask_tr, tau=TAU, n_grid=N_GRID):
     """Select blend weights on a validation split."""
     idx_sub, idx_val = train_test_split(np.arange(len(X_tr)), test_size=0.25,
@@ -148,6 +160,22 @@ def _select_weights(X_tr, y_tr, w_vec, ell, mask_tr, tau=TAU, n_grid=N_GRID):
             if crit > best_crit:
                 best_crit, best_lam, best_mix = crit, lam, mix
     return np.concatenate([[1 - best_lam], best_lam * best_mix])
+
+
+def fit_pca(data, model, ell):
+    """Fit and score the PCA lens for one dataset (same split as ECLIPSE)."""
+    X = np.asarray(data.X, float)
+    y = np.asarray(data.y, int)
+    idx_tr, idx_te = train_test_split(np.arange(len(X)), test_size=0.2,
+                                      random_state=0, stratify=y)
+    mask = getattr(data, "missing_mask", None)
+    lens = PCALens().fit(X[idx_tr], model.w, ell, mask[idx_tr] if mask is not None else None)
+    lens.pin_orientation(X, y)
+    lens.score(X[idx_te])
+    cov = np.cov(X.T)
+    kept = float(np.trace(lens.comp @ cov @ lens.comp.T) / np.trace(cov))
+    lens.extra = f"PCA · keeps {round(kept * 100)}% of variance · exact inverse"
+    return lens
 
 
 def fit_eclipse(data, model, ell):

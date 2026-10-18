@@ -673,3 +673,19 @@ table.chg tr.immrow .fname-cell { color: var(--muted); }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) .rb-band { background: rgba(235, 235, 245, 0.35); }
 }
+
+/* What can you change? */
+#rules { margin: 0 0 0.7rem; border: 1px solid var(--line); border-radius: 8px;
+  padding: 0.45rem 0.8rem; background: var(--panel); }
+#rules > summary { cursor: pointer; display: flex; flex-wrap: wrap; align-items: center; gap: 0.35rem; }
+.rules-title { font-weight: 700; font-size: 0.92rem; margin-right: 0.3rem; }
+.rule-chip { display: inline-flex; align-items: center; gap: 0.2rem; font-size: 0.78rem;
+  border: 1px solid var(--line); border-radius: 999px; padding: 0.1rem 0.55rem; background: var(--card); }
+.rule-chip.rule-fixed { color: var(--muted); }
+.rule-chip.rule-up, .rule-chip.rule-down { color: var(--ink); border-color: #9d8bd8; }
+#rules-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr));
+  gap: 0.35rem 1.2rem; margin: 0.6rem 0 0.2rem; }
+.rule-row { display: flex; justify-content: space-between; align-items: center; gap: 0.6rem;
+  font-size: 0.88rem; }
+.rule-row select { font: inherit; font-size: 0.84rem; padding: 0.15rem 0.3rem; border: 1px solid var(--line);
+  border-radius: 4px; background: var(--input); color: var(--ink); }

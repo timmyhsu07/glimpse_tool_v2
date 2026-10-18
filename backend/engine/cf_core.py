@@ -8,7 +8,7 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from data import LOADERS, DATASET_CHOICES, evaluate
 from counterfactuals import train_logreg, RashomonEllipsoid, _sigmoid
-from lenses import fit_eclipse
+from lenses import fit_eclipse, fit_pca
 from mlp_backend import MLPBackend
 
 N_SCATTER = 600
@@ -72,11 +72,16 @@ def _models(dataset_key, eps):
     return m
 
 
+# Which map the site draws: "pca" or "eclipse". Switched to PCA on 2026-10-14.
+MAP_LENS = "pca"
+_LENS_FIT = {"pca": fit_pca, "eclipse": fit_eclipse}
+
+
 def _lens(dataset_key, eps):
     key = (dataset_key, round(float(eps), 6))
     if key not in _LENSES:
         m = _models(dataset_key, eps)
-        _LENSES[key] = fit_eclipse(m["data"], m["lin"], m["lin_ell"])
+        _LENSES[key] = _LENS_FIT[MAP_LENS](m["data"], m["lin"], m["lin_ell"])
     return _LENSES[key]
 
 
@@ -277,11 +282,37 @@ def _percentile(col, v):
     return float(np.mean(col <= v) * 100.0)
 
 
-def _panel(setup, which, x0):
+RULES = ("fixed", "up", "down", "free")
+
+
+def _rules(setup, x0, constraints=None):
+    """Per-value rules -> (fixed mask, limits, {name: rule}).
+
+    Defaults: the topic's locked values are "fixed", the rest "free". ``constraints``
+    ({name: rule}) overrides them; "up" can't go below the person's value, "down"
+    can't go above it. Everything still stays within what the data has seen.
+    """
+    names = [str(n) for n in setup["data"].feature_names]
+    rule = {n: ("fixed" if n in setup["immutable"] else "free") for n in names}
+    for n, r in (constraints or {}).items():
+        if n in rule and r in RULES:
+            rule[n] = r
+    fixed = np.array([rule[n] == "fixed" for n in names])
+    lo, hi = setup["limits"][0].copy(), setup["limits"][1].copy()
+    for j, n in enumerate(names):
+        if rule[n] == "up":
+            lo[j] = max(lo[j], x0[j])
+        elif rule[n] == "down":
+            hi[j] = min(hi[j], x0[j])
+    return fixed, (lo, hi), rule
+
+
+def _panel(setup, which, x0, fixed=None, limits=None):
     """Build one model panel for a query."""
     lens, bounds = setup["lens"], setup["bounds"]
     g = setup["grids"]
-    fixed, limits = setup["fixed"], setup["limits"]
+    if fixed is None:
+        fixed, limits = setup["fixed"], setup["limits"]
 
     if which == "linear":
         model, ell = setup["lin"], setup["lin_ell"]
@@ -365,7 +396,7 @@ def _panel(setup, which, x0):
     }
 
 
-def _feature_deltas(setup, x0, panels):
+def _feature_deltas(setup, x0, panels, rule=None):
     """Per-feature changes for each model: the safe (robust) change under the
     model's name, and the quick (standard) change under "<model>_quick"."""
     data = setup["data"]
@@ -382,7 +413,8 @@ def _feature_deltas(setup, x0, panels):
             "group": fm.get("group", ""),
             "group_label": fm.get("group_label", ""),
             "value_label": fm.get("value_label", ""),
-            "immutable": name in setup["immutable"],
+            "immutable": (rule[name] == "fixed") if rule else name in setup["immutable"],
+            "rule": rule[name] if rule else ("fixed" if name in setup["immutable"] else "free"),
             "missing": False,
             "x0_real": x0r,
             "pct_x0": _percentile(data.X[:, j], x0[j]),
@@ -430,7 +462,7 @@ def people(dataset_key, customs, eps=0.03):
             "importance": setup["scatter_info"]["importance"], "people": out}
 
 
-def get_scene(dataset_key, eps=0.03, query_id=None, custom=None):
+def get_scene(dataset_key, eps=0.03, query_id=None, custom=None, constraints=None):
     """Return the JSON scene for a dataset row or entered values."""
     eps = float(np.clip(eps, 0.005, 0.2))
     setup = _setup(dataset_key, eps)
@@ -452,10 +484,11 @@ def get_scene(dataset_key, eps=0.03, query_id=None, custom=None):
                  "x": float(x0_2d[0]), "y": float(x0_2d[1]),
                  "outcome": int(data.y[query_id])}
 
-    panels = {"linear": _panel(setup, "linear", x0),
-              "mlp": _panel(setup, "mlp", x0)}
+    fixed, limits, rule = _rules(setup, x0, constraints)
+    panels = {"linear": _panel(setup, "linear", x0, fixed, limits),
+              "mlp": _panel(setup, "mlp", x0, fixed, limits)}
 
-    deltas = _feature_deltas(setup, x0, panels)
+    deltas = _feature_deltas(setup, x0, panels, rule)
     for j, row in enumerate(deltas):
         row["missing"] = (bool(not provided[j]) if custom is not None
                           else bool(data.missing_mask[query["id"], j]))

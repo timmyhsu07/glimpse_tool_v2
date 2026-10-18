@@ -96,7 +96,12 @@
 
   <section id="recommend">
     <h2>What would change it <span id="reco-tip"></span></h2>
-    <div id="reco-fixed"></div>
+    <details id="rules">
+      <summary><span class="rules-title">What can you change?</span>
+        <span id="rules-summary"></span><span id="rules-tip"></span></summary>
+      <div id="rules-list"></div>
+      <p class="tool-buttons"><button type="button" id="rules-reset">Back to defaults</button></p>
+    </details>
     <div class="reco-tabs" role="tablist" aria-label="Kind of change">
       <button type="button" role="tab" id="tab-quick" data-kind="quick" aria-selected="true">
         <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M13 2 4 14h7l-1 8 9-12h-7z"/></svg>

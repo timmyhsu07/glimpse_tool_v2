@@ -114,5 +114,55 @@ class SafeChangeTests(unittest.TestCase):
             self.assertEqual(index.route("GET", "/api/scene", f"dataset={gone}", None, {})[0], 400)
 
 
+
+
+class RuleTests(unittest.TestCase):
+    """Per-value rules: can't change, only up, only down, free."""
+
+    def scene(self, rules=None, custom=None):
+        body = {"dataset": "pima", "custom": custom or {"Glucose": 170, "BMI": 38}}
+        if rules is not None:
+            body["rules"] = rules
+        code, out, *_ = index.route("POST", "/api/scene", "", json.dumps(body), {})
+        return code, out
+
+    def row(self, out, name):
+        return next(r for r in out["deltas"] if r["name"] == name)
+
+    def test_defaults_lock_the_topics_fixed_values(self):
+        _, out = self.scene()
+        self.assertEqual(self.row(out, "Age")["rule"], "fixed")
+        self.assertEqual(self.row(out, "Glucose")["rule"], "free")
+
+    def test_only_up_and_only_down_are_respected(self):
+        _, free = self.scene()
+        start = self.row(free, "Glucose")["x0_real"]
+        # Lowering glucose is the natural fix, so "only up" must stop it going down.
+        self.assertLess(self.row(free, "Glucose")["linear"]["cf_real"], start - 1)
+        _, up = self.scene({"Glucose": "up"})
+        for key in ("linear", "mlp", "linear_quick", "mlp_quick"):
+            self.assertGreaterEqual(self.row(up, "Glucose")[key]["cf_real"], start - 1e-3, key)
+        _, down = self.scene({"BMI": "down"})
+        b0 = self.row(down, "BMI")["x0_real"]
+        for key in ("linear", "mlp", "linear_quick", "mlp_quick"):
+            self.assertLessEqual(self.row(down, "BMI")[key]["cf_real"], b0 + 1e-3, key)
+
+    def test_fixed_and_unlocking(self):
+        _, out = self.scene({"Glucose": "fixed", "Age": "free"})
+        g = self.row(out, "Glucose")
+        self.assertTrue(g["immutable"])
+        self.assertAlmostEqual(g["linear"]["cf_real"], g["x0_real"], places=3)
+        self.assertEqual(self.row(out, "Age")["rule"], "free")
+
+    def test_bad_rules_are_refused(self):
+        self.assertEqual(self.scene({"Glucose": "sideways"})[0], 400)
+        code, *_ = index.route("GET", "/api/scene", "dataset=pima&rules=notjson", None, {})
+        self.assertEqual(code, 400)
+
+    def test_site_map_is_pca(self):
+        _, out = self.scene()
+        self.assertEqual(out["lens"]["key"], "pca")
+
+
 if __name__ == "__main__":
     unittest.main()

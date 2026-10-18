@@ -14,7 +14,8 @@ const FIELD_SCALE = [
 ]; //  
 
 const G = window.GLIMPSE;
-const state = { dataset: "pima", query: null, custom: null, point: null };
+const state = { dataset: "pima", query: null, custom: null, point: null, rules: {} };
+const RULES_KEY = "glimpse-rules:";
 
 const el = (id) => document.getElementById(id);
 const plotDivs = { linear: el("plot-linear"), mlp: el("plot-mlp") };
@@ -448,9 +449,7 @@ function changeCard(c) {
 
 function renderRecommend(scene) {
   const [goodName] = scene.class_names;
-  const imm = scene.deltas.filter((r) => r.immutable && !r.group).map((r) => r.label);
-  el("reco-fixed").innerHTML = imm.map((l) =>
-    `<span class="fixed-chip">${G.LOCK} ${G.esc(l)}</span>`).join("");
+  renderRules(scene);
   for (const t of document.querySelectorAll(".reco-tabs [role=tab]"))
     t.setAttribute("aria-selected", String(t.dataset.kind === recoKind));
 
@@ -481,6 +480,52 @@ function setRecoKind(kind) {
     renderChanges(lastScene);
   }
 }
+// ---- what can you change: free / only up / only down / can't change, per value
+
+const RULE_TEXT = { free: "Free", up: "Only up", down: "Only down", fixed: "Can’t change" };
+const RULE_ICON = { up: "↑", down: "↓" };
+
+function ruleChip(r) {
+  const icon = r.rule === "fixed" ? G.LOCK : RULE_ICON[r.rule] || "";
+  return `<span class="rule-chip rule-${r.rule}">${icon} ${G.esc(r.label)}</span>`;
+}
+
+function renderRules(scene) {
+  const rows = scene.deltas.filter((r) => !r.group);
+  const limited = rows.filter((r) => r.rule !== "free");
+  el("rules-summary").innerHTML = limited.length
+    ? limited.map(ruleChip).join("") : `<span class="sub">Everything can change</span>`;
+  el("rules-list").innerHTML = rows.map((r) => `<label class="rule-row">
+      <span class="rule-name">${G.esc(r.label)}</span>
+      <select data-name="${G.esc(r.name)}" aria-label="${G.esc(r.label)}: what can change">
+        ${Object.entries(RULE_TEXT).map(([k, t]) =>
+          `<option value="${k}" ${k === r.rule ? "selected" : ""}>${t}</option>`).join("")}
+      </select></label>`).join("");
+}
+
+function loadRules() {
+  try { state.rules = JSON.parse(localStorage.getItem(RULES_KEY + state.dataset) || "{}"); }
+  catch (e) { state.rules = {}; }
+}
+function saveRules() {
+  try { localStorage.setItem(RULES_KEY + state.dataset, JSON.stringify(state.rules)); } catch (e) {}
+}
+
+el("rules-list").addEventListener("change", (e) => {
+  const sel = e.target.closest("select[data-name]");
+  if (!sel || loading) return;
+  state.rules[sel.dataset.name] = sel.value;
+  saveRules();
+  refresh();
+});
+el("rules-reset").addEventListener("click", () => {
+  state.rules = {};
+  saveRules();
+  refresh();
+});
+el("rules-tip").innerHTML = G.tip("Tell GLIMPSE what you can change. Suggestions never touch " +
+  "“Can’t change” values, and “Only up” / “Only down” values only move that way.", "right");
+
 for (const t of document.querySelectorAll(".reco-tabs [role=tab]"))
   t.addEventListener("click", () => setRecoKind(t.dataset.kind));
 el("reco-lists").addEventListener("click", (e) => {
@@ -529,7 +574,9 @@ function whatifFeatures(scene) {
 function renderWhatif(scene) {
   whatifValues = personValues(scene);
   el("whatif-sliders").innerHTML = whatifFeatures(scene).map(({ r, f }) => {
-    const lo = Math.min(f.p5 ?? f.min, r.x0_real), hi = Math.max(f.p95 ?? f.max, r.x0_real);
+    let lo = Math.min(f.p5 ?? f.min, r.x0_real), hi = Math.max(f.p95 ?? f.max, r.x0_real);
+    if (r.rule === "up") lo = r.x0_real;          // only up: can't drag below where you are
+    if (r.rule === "down") hi = r.x0_real;
     const step = f.integer ? 1 : (hi - lo) / 100;
     return `<div class="wi-row" data-name="${G.esc(r.name)}" data-int="${f.integer}"
       data-min="${f.min}" data-max="${f.max}">
@@ -997,17 +1044,18 @@ async function drawScene() {
   if (state.point) {
     resp = await fetch("/api/scene", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ dataset: state.dataset, point: state.point }),
+      body: JSON.stringify({ dataset: state.dataset, point: state.point, rules: state.rules }),
     });
   } else if (state.custom) {
     resp = await fetch("/api/scene", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ dataset: state.dataset, custom: state.custom }),
+      body: JSON.stringify({ dataset: state.dataset, custom: state.custom, rules: state.rules }),
     });
   } else {
     const url = new URL("/api/scene", location.origin);
     url.searchParams.set("dataset", state.dataset);
     if (state.query != null) url.searchParams.set("query", state.query);
+    if (Object.keys(state.rules).length) url.searchParams.set("rules", JSON.stringify(state.rules));
     resp = await fetch(url);
   }
   const scene = await resp.json();
@@ -1155,6 +1203,7 @@ function showMapNote(scene) {
 
 el("dataset").addEventListener("change", async (e) => {
   state.dataset = e.target.value;
+  loadRules();
   state.query = null; state.custom = null; state.point = null;
   el("save-msg").textContent = "";
   closeSavePanel();
@@ -1394,6 +1443,7 @@ async function init() {
     state.custom = pending.values;
   }
 
+  loadRules();
   const meta = await (await fetch("/api/datasets")).json();
   el("dataset").innerHTML = meta.datasets
     .map((d) => `<option value="${G.esc(d.key)}">${G.esc(G.topicName(d.key, d.label))}</option>`)

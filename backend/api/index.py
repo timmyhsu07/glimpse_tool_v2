@@ -177,6 +177,24 @@ def _clean_custom(custom):
     return clean, None
 
 
+def _clean_rules(raw):
+    """({name: "fixed" | "up" | "down" | "free"}, None), or (None, error message)."""
+    if raw in (None, ""):
+        return None, None
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except Exception:
+            return None, "'rules' must be JSON"
+    if not isinstance(raw, dict) or len(raw) > 500:
+        return None, "'rules' must be a {value: rule} object"
+    allowed = ("fixed", "up", "down", "free")
+    for k, v in raw.items():
+        if not isinstance(k, str) or v not in allowed:
+            return None, f"rule for '{k}' must be one of {', '.join(allowed)}"
+    return raw, None
+
+
 def _people_route(body):
     """POST {dataset, people: [{feature: value}, ...]} -> predictions, no map."""
     data = _json_object(body)
@@ -240,8 +258,11 @@ def route(method, path, query, body, headers=None):
         ds = q.get("dataset", ["pima"])[0]
         if ds not in gs.VALID:
             return 400, {"error": f"unknown dataset '{ds}'"}
+        rules, err = _clean_rules(q.get("rules", [None])[0])
+        if err:
+            return 400, {"error": err}
         try:
-            return 200, gs.scene(ds, query_id=q.get("query", [None])[0])
+            return 200, gs.scene(ds, query_id=q.get("query", [None])[0], constraints=rules)
         except Exception as exc:
             return 500, {"error": str(exc)}
 
@@ -253,13 +274,16 @@ def route(method, path, query, body, headers=None):
         ds = data.get("dataset", "pima")
         if ds not in gs.VALID:
             return 400, {"error": f"unknown dataset '{ds}'"}
+        rules, err = _clean_rules(data.get("rules"))
+        if err:
+            return 400, {"error": err}
         if "point" in data:                       # an empty spot clicked on the map
             point = _map_point(data["point"])
             if point is None:
                 return 400, {"error": "'point' must be [x, y] map coordinates"}
             try:
                 values, outside = gs.decode(ds, point)
-                scene = gs.scene(ds, custom=values)
+                scene = gs.scene(ds, custom=values, constraints=rules)
             except Exception as exc:
                 return 500, {"error": str(exc)}
             scene["query"]["from_map"] = True
@@ -269,7 +293,7 @@ def route(method, path, query, body, headers=None):
         if err:
             return 400, {"error": err}
         try:
-            return 200, gs.scene(ds, custom=clean)
+            return 200, gs.scene(ds, custom=clean, constraints=rules)
         except Exception as exc:
             return 500, {"error": str(exc)}
 

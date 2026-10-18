@@ -68,9 +68,21 @@ api/index.py         Vercel entry point; loads backend/api/index.py
 | POST | `/api/forgot` | `{email}`; emails a one-time reset link (1 hour) |
 | POST | `/api/reset` | `{token, password}`; sets the new password and signs in |
 
+## The map
+
+The site draws a PCA map (`MAP_LENS = "pca"` in `backend/engine/cf_core.py`); set it to
+`"eclipse"` and re-run `precompute.py` to go back to ECLIPSE. PCA ignores the model, so it shows
+less of it (Diabetes 65% vs 99%, Breast cancer 76% vs 97%) and draws suggested changes on the
+correct side of their line less often (Diabetes 55% vs 64%, Breast cancer 34% vs 43%). The
+suggestions themselves are the same either way.
+
 ## How suggested changes work
 
-- Values in the locked list per topic (`IMMUTABLE` in `backend/engine/cf_core.py`) never change.
+- Every value has a rule: can't change, only up, only down, or free. The defaults lock each
+  topic's `IMMUTABLE` values; people change any rule in "What can you change?" on the map page,
+  and requests send them as `rules` (`{name: "fixed" | "up" | "down" | "free"}`).
+- Values in the locked list per topic (`IMMUTABLE` in `backend/engine/cf_core.py`) never change
+  unless the person unlocks them.
 - Every other value stays within the lowest and highest seen in the data (widened to include
   where the person starts), so there are no negative counts or percentages over 100.
 - Each model reports `quick_ok` (the quickest change flips it) and `safe_ok` (the safest change
