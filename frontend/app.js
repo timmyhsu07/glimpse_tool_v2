@@ -195,17 +195,71 @@ function disputed(scene) {
 }
 
 // The density map: where people are, without showing any one of them.
-// One strong violet, see-through where few people are and dark where many are.
+// A smooth estimate (Gaussian kernel, Scott's bandwidth) on a grid, shaded by how
+// many people live inside each band: the darkest band holds the densest 20% of
+// people, the outer line 80%. One strong violet, see-through outside the bands.
 const DENSITY = { light: "88,52,196", dark: "185,160,255" };
+const DENS_GRID = 110;            // grid cells per side
+const DENS_BANDS = [0.2, 0.4, 0.6, 0.8];
+function densityGrid(scene) {
+  if (scene._density) return scene._density;
+  const xs = scene.points.map((p) => p.x), ys = scene.points.map((p) => p.y);
+  const n = xs.length;
+  const spread = (v) => {
+    const s = [...v].sort((a, b) => a - b), mean = v.reduce((a, b) => a + b, 0) / n;
+    const sd = Math.sqrt(v.reduce((a, b) => a + (b - mean) ** 2, 0) / Math.max(n - 1, 1));
+    const iqr = (quantile(s, 0.75) - quantile(s, 0.25)) / 1.349;
+    return Math.max(iqr > 0 ? Math.min(sd, iqr) : sd, 1e-6);
+  };
+  const scott = Math.pow(n, -1 / 6);
+  const hx = spread(xs) * scott, hy = spread(ys) * scott;
+  const axis = (v, h) => {
+    const lo = Math.min(...v) - 3 * h, hi = Math.max(...v) + 3 * h;
+    return Array.from({ length: DENS_GRID }, (_, i) => lo + (hi - lo) * i / (DENS_GRID - 1));
+  };
+  const gx = axis(xs, hx), gy = axis(ys, hy);
+  const dx = gx[1] - gx[0], dy = gy[1] - gy[0];
+  const z = gy.map(() => new Float64Array(DENS_GRID));
+  // Each person only reaches cells within 3 bandwidths.
+  const rx = Math.ceil(3 * hx / dx), ry = Math.ceil(3 * hy / dy);
+  for (let k = 0; k < n; k++) {
+    const ci = Math.round((xs[k] - gx[0]) / dx), cj = Math.round((ys[k] - gy[0]) / dy);
+    for (let j = Math.max(0, cj - ry); j <= Math.min(DENS_GRID - 1, cj + ry); j++) {
+      const ey = ((gy[j] - ys[k]) / hy) ** 2;
+      for (let i = Math.max(0, ci - rx); i <= Math.min(DENS_GRID - 1, ci + rx); i++)
+        z[j][i] += Math.exp(-0.5 * (((gx[i] - xs[k]) / hx) ** 2 + ey));
+    }
+  }
+  // The density at each person, read off the grid, sorted: a cell's "depth" is the
+  // share of people living somewhere less crowded than it.
+  const at = (x, y) => {
+    const fi = (x - gx[0]) / dx, fj = (y - gy[0]) / dy;
+    const i = Math.min(DENS_GRID - 2, Math.floor(fi)), j = Math.min(DENS_GRID - 2, Math.floor(fj));
+    const a = fi - i, b = fj - j;
+    return (1 - a) * (1 - b) * z[j][i] + a * (1 - b) * z[j][i + 1] +
+           (1 - a) * b * z[j + 1][i] + a * b * z[j + 1][i + 1];
+  };
+  const own = xs.map((x, k) => at(x, ys[k])).sort((a, b) => a - b);
+  const depth = (v) => {
+    let lo = 0, hi = n;
+    while (lo < hi) { const m = (lo + hi) >> 1; if (own[m] < v) lo = m + 1; else hi = m; }
+    return lo / n;
+  };
+  scene._density = { x: gx, y: gy, z: z.map((row) => Array.from(row, depth)) };
+  return scene._density;
+}
+
 function densityTrace(scene) {
   const c = isDark() ? DENSITY.dark : DENSITY.light;
+  const d = densityGrid(scene);
   return {
-    type: "histogram2dcontour", x: scene.points.map((p) => p.x),
-    y: scene.points.map((p) => p.y), nbinsx: 28, nbinsy: 28, ncontours: 8,
-    colorscale: [[0, `rgba(${c},0)`], [0.12, `rgba(${c},0.22)`],
-                 [0.5, `rgba(${c},0.55)`], [1, `rgba(${c},0.9)`]],
-    contours: { coloring: "fill", showlines: true },
-    line: { color: `rgba(${c},0.95)`, width: 1 },
+    type: "contour", x: d.x, y: d.y, z: d.z, zmin: 0, zmax: 1,
+    contours: { start: DENS_BANDS[0], end: DENS_BANDS[DENS_BANDS.length - 1],
+                size: DENS_BANDS[1] - DENS_BANDS[0], coloring: "fill", showlines: true },
+    colorscale: [[0, `rgba(${c},0)`], [0.2, `rgba(${c},0)`], [0.2001, `rgba(${c},0.16)`],
+                 [0.4, `rgba(${c},0.3)`], [0.6, `rgba(${c},0.46)`], [0.8, `rgba(${c},0.62)`],
+                 [1, `rgba(${c},0.62)`]],
+    line: { color: `rgba(${c},0.9)`, width: 1, smoothing: 1.3 },
     showscale: false, hoverinfo: "skip", name: "people",
   };
 }
@@ -321,7 +375,9 @@ function renderLegend(scene) {
   const people = oldGraph
     ? `<li><span class="dot" style="background:${COLORS.good}"></span> ${G.esc(g)}` +
       ` <span class="dot" style="background:${COLORS.bad}"></span> ${G.esc(b)}</li>`
-    : `<li><span class="sw" style="background:rgb(${isDark() ? DENSITY.dark : DENSITY.light})"></span> Many people</li>`;
+    : `<li><span class="sw" style="background:rgb(${isDark() ? DENSITY.dark : DENSITY.light})"></span> Many people ` +
+      `${G.tip("Shading shows where people are. The darkest band holds the most crowded 20% of people; " +
+        "each lighter band adds another 20%, and the outer line holds 80%.")}</li>`;
   el("legend").innerHTML = [
     `<li><span class="sw" style="background:#aaffaa"></span> ${G.esc(g)} side` +
       ` <span class="sw" style="background:#ffaaff"></span> ${G.esc(b)} side</li>`,
