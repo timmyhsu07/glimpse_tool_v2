@@ -57,8 +57,10 @@ Status: [x] done, [~] partly done, [ ] not started.
    - [x] Two fields with a show-password toggle, "Continue without an account", forgot password,
          "Save and compare your results", plain errors.
 9. How it works page
-   - [~] A short version is on the home page.
-   - [ ] Glossary that the "?" tips link into.
+   - [x] Its own page (top menu, "How it works"), linked from the home page and under the map
+         legend (2026-10-19).
+   - [~] Glossary that the "?" tips link into: each term has an anchor (#read-map, #close-call,
+         #quick-safe, #can-change, …); the "?" tips don't link yet.
 10. Expert view
    - [x] "Details for experts" keeps the exact numbers.
    - [ ] CSV download.

@@ -33,6 +33,7 @@ frontend/            the site: served as-is, no build step
   login.html auth.js   sign in, create account, forgot / reset password
   account.html account.js   my account: save cards, timeline, change password, delete account
   compare.html compare.js   compare two people: you, a save, or a typical person
+  how.html             how it works: reading the map, close calls, the changes it suggests
   common.js            shared: theme, navigation, topic names, "?" tips
   style.css            shared by every page
 backend/

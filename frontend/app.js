@@ -390,6 +390,7 @@ function renderLegend(scene) {
       "Line: where it flips. Other good models: models that fit the data about as well. " +
       "Strictest: the one least on your side. Quick change: smallest change for this model. " +
       "Safe change: smallest change that works for every good model.")}</li>`,
+    `<li><a href="/how.html#read-map">How to read the map</a></li>`,
   ].join("");
 }
 

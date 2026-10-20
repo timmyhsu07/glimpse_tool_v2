@@ -404,9 +404,27 @@ table.chg tr.immrow .fname-cell { color: var(--muted); }
 .step-n { display: inline-flex; width: 1.6rem; height: 1.6rem; border-radius: 50%;
   align-items: center; justify-content: center; font-weight: 700; font-size: 0.85rem;
   background: var(--good-bg); color: var(--ink); margin-bottom: 0.2rem; }
-.how-more { margin: 0.9rem 0; font-size: 0.92rem; }
-.how-more summary { cursor: pointer; font-weight: 600; }
-.how-more p { max-width: 42rem; }
+.home-how { margin: 1.6rem 0 0; }
+.home-how a { font-weight: 700; color: var(--good); }
+
+/* How it works page */
+#how-page { max-width: 46rem; margin: 0 auto; padding-bottom: 2rem; }
+#how-page h1 { font-size: clamp(1.5rem, 4vw, 2rem); margin: 1.6rem 0 1rem; }
+#how-page .steps { grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); }
+.how-toc { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 1.2rem 0 0.4rem; }
+.how-toc a { font-size: 0.85rem; padding: 0.2rem 0.7rem; border: 1px solid var(--line);
+  border-radius: 999px; text-decoration: none; color: var(--ink); background: var(--panel); }
+.how-toc a:hover { border-color: var(--muted); }
+.how-sec { margin-top: 1.6rem; scroll-margin-top: 1rem; }
+.how-sec h2 { font-size: 1.15rem; margin: 0 0 0.4rem; }
+.how-sec p, .how-sec li { line-height: 1.5; }
+.how-terms { display: grid; grid-template-columns: 11rem 1fr; gap: 0.5rem 1rem; margin: 0.6rem 0 0; }
+.how-terms dt { font-weight: 700; scroll-margin-top: 1rem; }
+.how-terms dd { margin: 0; }
+@media (max-width: 600px) {
+  .how-terms { grid-template-columns: 1fr; gap: 0.1rem; }
+  .how-terms dd { margin-bottom: 0.5rem; }
+}
 .home-note { margin: 2rem 0 0; }
 
 /* Map tools */
