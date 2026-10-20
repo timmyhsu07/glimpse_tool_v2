@@ -71,6 +71,11 @@ Status: [x] done, [~] partly done, [ ] not started.
 - [~] Loading message ("Loading… the first time can take up to a minute").
 - [~] Mobile: single column below 1000 px, smaller maps on phones. Needs a real pass.
 - [~] Accessibility: keyboard topic cards and tips, labelled bars. Map keyboard use is missing.
+- [x] Colour-blind-safe colours (2026-10-19): blue for the good side and orange for the bad
+      side everywhere, instead of green against pink. Checked like Adobe's Color Accessibility
+      tool: every pair stays distinct under protanopia, deuteranopia and tritanopia, and text
+      and map lines meet WCAG contrast in light and dark mode. The strictest model's line is
+      also dashed, so it doesn't rely on colour.
 - [ ] Shareable links that never include personal values unless the user chooses.
 
 ## Things people can't change (added 2026-10-14)

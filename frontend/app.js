@@ -1,17 +1,29 @@
 
 
-const COLORS = {
-  good: "#2f6f9f", bad: "#c0573f",
-  boundary: "#1f2d6b", worst: "#e65100", fan: "#2aa198",
-  query: "#0d47a1", you: "#00695c",
-  std: "#4a148c", ell: "#b71c1c",
-  deltaLin: "#3949ab", deltaMlp: "#00897b", immutable: "#9e9e9e",
+// Colour-blind-safe palette: blue for the good side, orange for the bad side, never
+// red against green. Every pair that must be told apart stays distinct under
+// protanopia, deuteranopia and tritanopia, and lines and text meet WCAG contrast,
+// in both themes. Shapes and dashes carry meaning too (★ ✕ ▪, dashed strictest line).
+const PALETTE = {
+  light: {
+    good: "#0072b2", bad: "#d55e00",                       // dots on the old map
+    line: "#14213d", worst: "#b34700", fan: "#555555",
+    you: "#f0e442", quick: "#111111", safe: "#7a3300", outline: "#111111",
+    whatif: "#111111", arrow: "#111111",
+    deltaLin: "#0072b2", deltaMlp: "#009e73", immutable: "#d0d0d0",
+    density: "27,27,43", fieldOpacity: 0.45,
+    field: [[0, "#5aa0dc"], [0.25, "#a8cdee"], [0.5, "#f5f5f5"], [0.75, "#f8c590"], [1, "#f39a3d"]],
+  },
+  dark: {
+    good: "#56b4e9", bad: "#e69f00",
+    line: "#f2f2f5", worst: "#ffb070", fan: "#bbbbbb",
+    you: "#f0e442", quick: "#f2f2f2", safe: "#d55e00", outline: "#111111",
+    whatif: "#f2f2f5", arrow: "#f2f2f5",
+    deltaLin: "#56b4e9", deltaMlp: "#009e73", immutable: "#5a5f68",
+    density: "242,242,248", fieldOpacity: 0.5,
+    field: [[0, "#3d8fd6"], [0.25, "#2f5f8f"], [0.5, "#2a2e36"], [0.75, "#8a5a2b"], [1, "#e8892b"]],
+  },
 };
-
-const FIELD_SCALE = [
-  [0.0, "#aaffaa"], [0.25, "#ccffcc"], [0.5, "#f4f6fa"],
-  [0.75, "#ffccff"], [1.0, "#ffaaff"],
-]; //  
 
 const G = window.GLIMPSE;
 const state = { dataset: "pima", query: null, custom: null, point: null, rules: {} };
@@ -52,6 +64,7 @@ const ordinal = (n) => {
 };
 
 const isDark = () => G.isDark();
+const pal = () => PALETTE[isDark() ? "dark" : "light"];
 
 function themeColors() {
   return isDark()
@@ -68,22 +81,22 @@ document.addEventListener("glimpse-theme", () => {
   }
 });
 
-function polyTraces(lines, color, width, opacity, name, showlegend) {
+function polyTraces(lines, color, width, opacity, name, showlegend, dash) {
   const traces = lines.map((ln) => ({
     type: "scatter", mode: "lines", x: ln.x, y: ln.y,
-    line: { color, width }, opacity, showlegend: false, hoverinfo: "skip",
+    line: { color, width, dash: dash || "solid" }, opacity, showlegend: false, hoverinfo: "skip",
   }));
   if (showlegend)
     traces.push({ type: "scatter", mode: "lines", x: [null], y: [null],
-                  line: { color, width: 3 }, name, hoverinfo: "skip" });
+                  line: { color, width: 3, dash: dash || "solid" }, name, hoverinfo: "skip" });
   return traces;
 }
 
 function markerTrace(pt, color, name, symbol, size) {
   return {
     type: "scatter", mode: "markers", x: [pt.x], y: [pt.y],
-    marker: { size, color, symbol, opacity: 0.85,
-              line: { color: "#000", width: 0.7 } },
+    marker: { size, color, symbol, opacity: 0.95,
+              line: { color: pal().outline, width: 1 } },
     name, showlegend: false,
     hovertemplate: `${name}<extra></extra>`,
   };
@@ -94,49 +107,46 @@ function buildPanelTraces(scene, which) {
   const legend = which === "linear";
   const traces = [];
   const f = panel.field;
-  const tc = themeColors();
+  const tc = themeColors(), P = pal();
 
   traces.push({
     type: "heatmap", x: f.x, y: f.y, z: f.z,
-    zmin: 0, zmax: 1, colorscale: FIELD_SCALE, zsmooth: "best",
-    opacity: oldGraph ? 0.9 : 0.4, hoverinfo: "none", showscale: which === colorbarPanel(),
+    zmin: 0, zmax: 1, colorscale: P.field, zsmooth: "best",
+    opacity: oldGraph ? 0.6 : P.fieldOpacity, hoverinfo: "none", showscale: which === colorbarPanel(),
     colorbar: { title: { text: `chance of ${scene.class_names[1]}`, side: "right",
                          font: { color: tc.font } },
                 tickfont: { color: tc.font },
                 thickness: 12, len: 0.9, x: 1.02 },
   });
 
-  traces.push(...polyTraces(panel.fan, COLORS.fan, 1, 0.14,
+  traces.push(...polyTraces(panel.fan, P.fan, 1, 0.18,
                             "other good models", legend));
 
   if (oldGraph) traces.push(...dotTraces(scene, legend));
   else traces.push(densityTrace(scene));
 
-  traces.push(...polyTraces(panel.boundary, COLORS.boundary, 2.6, 1,
+  traces.push(...polyTraces(panel.boundary, P.line, 2.6, 1,
                             "model's line", legend));
-  traces.push(...polyTraces(panel.worst, COLORS.worst, 2.4, 0.95,
-                            "strictest good model", legend));
+  traces.push(...polyTraces(panel.worst, P.worst, 2.6, 1,
+                            "strictest good model", legend, "dash"));
 
   const q = scene.query, cf = panel.cfs;
   const qName = q.from_map ? "Person at this spot"
               : q.custom ? "You" : `Person #${q.id}`;
   traces.push({
     type: "scatter", mode: "markers", x: [q.x], y: [q.y],
-    marker: { size: q.custom ? 15 : 12,
-              color: q.custom ? COLORS.you : COLORS.query,
-              symbol: "star", opacity: 0.95, line: { color: "#000", width: 0.7 } },
+    marker: { size: q.custom ? 17 : 15, color: P.you,
+              symbol: "star", opacity: 1, line: { color: P.outline, width: 1.2 } },
     name: "person", showlegend: false, customdata: [q.id],
     hovertemplate: `${qName}<extra></extra>`,
   });
-  // Ink, not purple, so the ✕ stays visible on the violet density map.
   if (quickOk(scene, which))
-    traces.push(markerTrace(cf.standard, isDark() ? "#f2f2f2" : "#111111", "quick change", "x", 10));
+    traces.push(markerTrace(cf.standard, P.quick, "quick change", "x", 11));
   if (safeOk(scene, which))
-    traces.push(markerTrace(cf.ellice, COLORS.ell, "safe change", "square", 9));
+    traces.push(markerTrace(cf.ellice, P.safe, "safe change", "square", 10));
   traces.push({
     type: "scatter", mode: "markers", x: [null], y: [null], name: "what if",
-    marker: { size: 15, symbol: "star-open", color: isDark() ? "#ffd166" : "#a15c00",
-              line: { width: 2 } },
+    marker: { size: 16, symbol: "star-open", color: P.whatif, line: { width: 2 } },
     showlegend: false, hovertemplate: "What if<extra></extra>",
   });
   return traces;
@@ -165,13 +175,14 @@ function dotTraces(scene, legend) {
       `models say ${pct(p.lo)}–${pct(p.hi)}<br>${vals.join(" · ")}`;
   };
   const traces = [];
-  for (const [c, color, label] of [[0, COLORS.good, goodName], [1, COLORS.bad, badName]]) {
+  const P = pal();
+  for (const [c, color, label] of [[0, P.good, goodName], [1, P.bad, badName]]) {
     const sel = scene.points.filter((p) => p.outcome === c);
     traces.push({
       type: "scatter", mode: "markers",
       x: sel.map((p) => p.x), y: sel.map((p) => p.y),
       customdata: sel.map((p) => p.id), meta: "people", text: sel.map(card),
-      marker: { size: 5, color, opacity: 0.55, line: { color: "white", width: 0.3 } },
+      marker: { size: 5, color, opacity: 0.8, line: { color: isDark() ? "#111" : "#fff", width: 0.4 } },
       name: label, showlegend: legend,
       hovertemplate: "%{text}<extra></extra>",
     });
@@ -197,8 +208,8 @@ function disputed(scene) {
 // The density map: where people are, without showing any one of them.
 // A smooth estimate (Gaussian kernel, Scott's bandwidth) on a grid, shaded by how
 // many people live inside each band: the darkest band holds the densest 20% of
-// people, the outer line 80%. One strong violet, see-through outside the bands.
-const DENSITY = { light: "88,52,196", dark: "185,160,255" };
+// people, the outer line 80%. Neutral ink, so it never competes with the blue and
+// orange background; see-through outside the bands.
 const DENS_GRID = 110;            // grid cells per side
 const DENS_BANDS = [0.2, 0.4, 0.6, 0.8];
 function densityGrid(scene) {
@@ -250,16 +261,16 @@ function densityGrid(scene) {
 }
 
 function densityTrace(scene) {
-  const c = isDark() ? DENSITY.dark : DENSITY.light;
+  const c = pal().density;
   const d = densityGrid(scene);
   return {
     type: "contour", x: d.x, y: d.y, z: d.z, zmin: 0, zmax: 1,
     contours: { start: DENS_BANDS[0], end: DENS_BANDS[DENS_BANDS.length - 1],
                 size: DENS_BANDS[1] - DENS_BANDS[0], coloring: "fill", showlines: true },
-    colorscale: [[0, `rgba(${c},0)`], [0.2, `rgba(${c},0)`], [0.2001, `rgba(${c},0.16)`],
-                 [0.4, `rgba(${c},0.3)`], [0.6, `rgba(${c},0.46)`], [0.8, `rgba(${c},0.62)`],
-                 [1, `rgba(${c},0.62)`]],
-    line: { color: `rgba(${c},0.9)`, width: 1, smoothing: 1.3 },
+    colorscale: [[0, `rgba(${c},0)`], [0.2, `rgba(${c},0)`], [0.2001, `rgba(${c},0.07)`],
+                 [0.4, `rgba(${c},0.13)`], [0.6, `rgba(${c},0.19)`], [0.8, `rgba(${c},0.25)`],
+                 [1, `rgba(${c},0.25)`]],
+    line: { color: `rgba(${c},0.55)`, width: 1, smoothing: 1.3 },
     showscale: false, hoverinfo: "skip", name: "people",
   };
 }
@@ -316,7 +327,7 @@ function panelLayout(scene, which) {
       x: arrowTarget(scene, which).x, y: arrowTarget(scene, which).y, ax: q.x, ay: q.y,
       xref: "x", yref: "y", axref: "x", ayref: "y",
       showarrow: true, arrowhead: 3, arrowsize: 1.2, arrowwidth: 1.6,
-      arrowcolor: "#111", opacity: 0.85, text: "",
+      arrowcolor: pal().arrow, opacity: 0.9, text: "",
     }] : [],
   };
 }
@@ -328,11 +339,13 @@ function deltaTraces(scene) {
     .slice(0, 12).reverse();
 
   const label = (r) => (r.missing ? r.label + " ✱" : r.label);
+  const P = pal();
   const mk = (which, color, name) => ({
     type: "bar", orientation: "h", name,
     y: rows.map(label), x: rows.map((r) => r[which].delta_std),
-    marker: { color: rows.map((r) => (r.immutable ? COLORS.immutable : color)),
-              opacity: 0.85 },
+    marker: { color: rows.map((r) => (r.immutable ? P.immutable : color)),
+              pattern: { shape: rows.map((r) => (r.immutable ? "/" : "")), size: 6 },
+              opacity: 0.9 },
     customdata: rows.map((r) => [
       fmtVal(r.x0_real, r.integer), fmtVal(r[which].cf_real, r.integer),
       Math.round(r.pct_x0), Math.round(r[which].pct_cf),
@@ -343,8 +356,8 @@ function deltaTraces(scene) {
       "rank %{customdata[2]}% → %{customdata[3]}%{customdata[4]}" +
       "<extra>" + name + "</extra>",
   });
-  return [mk("linear", COLORS.deltaLin, "simple model"),
-          mk("mlp", COLORS.deltaMlp, "flexible model")];
+  return [mk("linear", P.deltaLin, "simple model"),
+          mk("mlp", P.deltaMlp, "flexible model")];
 }
 
 function deltaLayout() {
@@ -371,20 +384,20 @@ function renderLensNote(scene) {
 }
 
 function renderLegend(scene) {
-  const [g, b] = scene.class_names;
+  const [g, b] = scene.class_names, P = pal();
   const people = oldGraph
-    ? `<li><span class="dot" style="background:${COLORS.good}"></span> ${G.esc(g)}` +
-      ` <span class="dot" style="background:${COLORS.bad}"></span> ${G.esc(b)}</li>`
-    : `<li><span class="sw" style="background:rgb(${isDark() ? DENSITY.dark : DENSITY.light})"></span> Many people ` +
+    ? `<li><span class="dot" style="background:${P.good}"></span> ${G.esc(g)}` +
+      ` <span class="dot" style="background:${P.bad}"></span> ${G.esc(b)}</li>`
+    : `<li><span class="sw" style="background:rgba(${P.density},0.25)"></span> Many people ` +
       `${G.tip("Shading shows where people are. The darkest band holds the most crowded 20% of people; " +
         "each lighter band adds another 20%, and the outer line holds 80%.")}</li>`;
   el("legend").innerHTML = [
-    `<li><span class="sw" style="background:#aaffaa"></span> ${G.esc(g)} side` +
-      ` <span class="sw" style="background:#ffaaff"></span> ${G.esc(b)} side</li>`,
+    `<li><span class="sw" style="background:${P.field[0][1]}"></span> ${G.esc(g)} side` +
+      ` <span class="sw" style="background:${P.field[4][1]}"></span> ${G.esc(b)} side</li>`,
     people,
-    `<li><span class="sw line" style="background:${COLORS.boundary}"></span> Model’s line</li>`,
-    `<li><span class="sw line" style="background:${COLORS.fan}"></span> Other good models</li>`,
-    `<li><span class="sw line" style="background:${COLORS.worst}"></span> Strictest model</li>`,
+    `<li><span class="sw line" style="background:${P.line}"></span> Model’s line</li>`,
+    `<li><span class="sw line" style="background:${P.fan}"></span> Other good models</li>`,
+    `<li><span class="sw line dash" style="color:${P.worst}"></span> Strictest model (dashed)</li>`,
     `<li>★ You · ✕ Quick change · ▪ Safe change</li>`,
     `<li>${G.tip("Background: the simple model’s chance of " + b + ". " +
       "Line: where it flips. Other good models: models that fit the data about as well. " +

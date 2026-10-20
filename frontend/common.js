@@ -28,7 +28,7 @@
 
   const isDark = () => document.documentElement.getAttribute("data-theme") === "dark";
 
-  // The chance bar: a green half and a pink half split at 50%, a band for what the
+  // The chance bar: a blue half and an orange half split at 50%, a band for what the
   // other good models say (lo..hi), and a dot for the best guess. Percent inputs.
   function rangeBar(lo, hi, p, goodName, badName, compact) {
     const clamp = (v) => Math.min(100, Math.max(0, v));
