@@ -35,6 +35,9 @@ Status: [x] done, [~] partly done, [ ] not started.
    - [x] Dot map: hover card (prediction, models' range, two key values) and a
          "Most disputed" highlight (the 15% with the widest ranges).
    - [x] Clicking an empty spot shows a short "Estimated person at this spot" card.
+   - [x] "Around this person" view (2026-10-19): each model's map is rebuilt as a slice
+         through the chosen person that holds both suggested changes, so they show at their
+         true distance and direction, and the colours and lines are exact on that slice.
    - [ ] Pin two people and compare them side by side.
    - [ ] "Show people like me".
 5. What would change it

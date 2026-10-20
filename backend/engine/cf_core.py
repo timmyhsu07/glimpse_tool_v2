@@ -171,6 +171,95 @@ def _on_map(lens, change):
     return round(float(np.linalg.norm(lens.comp @ change)) / size, 3)
 
 
+# "Around this person": each model's map rebuilt as a flat slice through the person
+# that holds both of that model's suggested changes. The changes show at their true
+# distance and direction from the person, and the colour and lines are the models'
+# exact answers on the slice (no approximation, unlike the shared map).
+VIEWS = ("everyone", "around")
+PLANE_RES = 260
+
+
+def change_plane(setup, x0, panel):
+    """Orthonormal 2 x d axes of the slice. The first points at the change the
+    map's arrow uses (safe if it works, else quick), the second at the other change.
+    When a change is missing or both point the same way, the model's direction and
+    the shared map's axes fill in."""
+    q, s = panel["_cf_std_full"] - x0, panel["_cf_rob_full"] - x0
+    first, second = (s, q) if panel["metrics"]["safe_ok"] else (q, s)
+    axes = []
+    for v in (first, second, -setup["lin"].w, *setup["lens"].comp):
+        v = np.asarray(v, float).copy()
+        for a in axes:
+            v -= (v @ a) * a
+        if np.linalg.norm(v) > 1e-6:
+            axes.append(v / np.linalg.norm(v))
+        if len(axes) == 2:
+            break
+    A = np.array(axes)
+    if (A @ second)[1] < 0:              # the other change points up
+        A[1] *= -1
+    return A
+
+
+def _around(setup, which, x0, panel):
+    """Redraw one panel on its slice through x0, in place."""
+    A = change_plane(setup, x0, panel)
+    decode = lambda Z: np.asarray(Z, float) @ A + x0
+    pts = (setup["data"].X[setup["scatter_idx"]] - x0) @ A.T
+    std_2d = A @ (panel["_cf_std_full"] - x0)
+    rob_2d = A @ (panel["_cf_rob_full"] - x0)
+    span = np.vstack([pts, std_2d, rob_2d, np.zeros(2)])
+    lo, hi = span.min(0), span.max(0)
+    pad = 0.08 * (hi - lo)
+    lo, hi = lo - pad, hi + pad
+
+    gx, gy = np.linspace(lo[0], hi[0], FIELD_RES), np.linspace(lo[1], hi[1], FIELD_RES)
+    GX, GY = np.meshgrid(gx, gy)
+    X_field = decode(np.column_stack([GX.ravel(), GY.ravel()]))
+    if which == "linear":
+        lin, ell = setup["lin"], setup["lin_ell"]
+        field = _sigmoid(lin.logit(X_field))
+
+        def line(th):
+            ln = _line_in_box(A @ th[:-1], float(th[:-1] @ x0 + th[-1]), lo, hi)
+            return [ln] if ln is not None else []
+        boundary = line(lin.theta)
+        fan = [ln for th in ell.sample_models(N_FAN, random_state=1) for ln in line(th)]
+        worst = line(panel["_theta_w"])
+    else:
+        mlp = setup["mlp"]
+        field = mlp.proba(X_field)
+
+        def grid(res):
+            XX, YY = np.meshgrid(np.linspace(lo[0], hi[0], res), np.linspace(lo[1], hi[1], res))
+            return XX, YY, mlp.embed_h(decode(np.column_stack([XX.ravel(), YY.ravel()])))
+        CX, CY, H = grid(PLANE_RES)
+        FX, FY, H_fan = grid(FAN_RES)
+        boundary = _contour_lines(CX, CY, H, mlp.theta)
+        fan = [ln for th in mlp.ell.sample_models(N_FAN, random_state=1)
+               for ln in _contour_lines(FX, FY, H_fan, th)]
+        worst = _contour_lines(CX, CY, H, panel["_theta_w"])
+
+    panel.update(
+        field={"z": field.reshape(FIELD_RES, FIELD_RES).tolist(), "x": gx.tolist(), "y": gy.tolist()},
+        boundary=boundary, fan=fan, worst=worst,
+        xy=[[round(float(a), 4), round(float(b), 4)] for a, b in pts],
+        bounds={"x": [float(lo[0]), float(hi[0])], "y": [float(lo[1]), float(hi[1])]},
+        plane={"origin": [float(v) for v in x0], "axes": A.tolist()},
+    )
+    panel["cfs"]["standard"].update(x=float(std_2d[0]), y=float(std_2d[1]))
+    panel["cfs"]["ellice"].update(x=float(rob_2d[0]), y=float(rob_2d[1]))
+    m = panel["metrics"]
+    for key, cf in (("quick_on_map", panel["_cf_std_full"]), ("safe_on_map", panel["_cf_rob_full"])):
+        size = float(np.linalg.norm(cf - x0))
+        m[key] = 1.0 if size < 1e-9 else round(float(np.linalg.norm(A @ (cf - x0))) / size, 3)
+    d_erm = _dist_to_lines(rob_2d, boundary) if boundary else None
+    d_worst = _dist_to_lines(rob_2d, worst) if worst else None
+    m["d2_cf_to_erm"] = None if d_erm is None else round(d_erm, 4)
+    m["d2_cf_to_worst"] = None if d_worst is None else round(d_worst, 4)
+    m["worst_closer"] = bool(d_worst is not None and d_erm is not None and d_worst <= d_erm + 1e-9)
+
+
 def _theta_line(lens, theta, bounds):
     """Return the clipped 2D boundary for a linear lens."""
     a, c0 = lens.linear_logit_coeffs(theta)
@@ -256,18 +345,25 @@ def _custom_x0(setup, custom):
     return x0, provided
 
 
-def decode_point(dataset_key, point, eps=0.03):
+def decode_point(dataset_key, point, eps=0.03, plane=None):
     """The person the map places at a 2-D position, in real units.
 
-    ECLIPSE is linear with orthonormal axes, so this is its exact inverse and the
-    person lands where the click was. Values keep six significant digits (well
+    The map is linear with orthonormal axes, so this is its exact inverse and the
+    person lands where the click was. ``plane`` ({origin, axes}, standardized) is a
+    panel's slice from the "around this person" view; without it the shared map is used. Values keep six significant digits (well
     under a pixel, even for small-scale features), so whole-number features can
     come back fractional. Also returns the features that fall outside the
     observed data.
     """
     setup = _setup(dataset_key, float(np.clip(eps, 0.005, 0.2)))
     data = setup["data"]
-    x_std = setup["lens"].invert(np.asarray(point, float).reshape(1, 2))[0]
+    if plane is None:
+        x_std = setup["lens"].invert(np.asarray(point, float).reshape(1, 2))[0]
+    else:
+        origin, axes = np.asarray(plane["origin"], float), np.asarray(plane["axes"], float)
+        if origin.shape != (data.d,) or axes.shape != (2, data.d):
+            raise ValueError("'plane' does not match this topic")
+        x_std = origin + np.asarray(point, float) @ axes
     real = data.to_real(x_std)
     values, outside = {}, []
     for f, v in zip(setup["features"], real):
@@ -393,6 +489,7 @@ def _panel(setup, which, x0, fixed=None, limits=None):
         "metrics": metrics,
         "_cf_rob_full": cf_rob,
         "_cf_std_full": cf_std,
+        "_theta_w": theta_w,
     }
 
 
@@ -462,8 +559,12 @@ def people(dataset_key, customs, eps=0.03):
             "importance": setup["scatter_info"]["importance"], "people": out}
 
 
-def get_scene(dataset_key, eps=0.03, query_id=None, custom=None, constraints=None):
-    """Return the JSON scene for a dataset row or entered values."""
+def get_scene(dataset_key, eps=0.03, query_id=None, custom=None, constraints=None,
+              view="everyone"):
+    """Return the JSON scene for a dataset row or entered values.
+
+    ``view`` "around" rebuilds each model's map around the person (see _around).
+    """
     eps = float(np.clip(eps, 0.005, 0.2))
     setup = _setup(dataset_key, eps)
     data, emb, lens = setup["data"], setup["emb"], setup["lens"]
@@ -488,12 +589,17 @@ def get_scene(dataset_key, eps=0.03, query_id=None, custom=None, constraints=Non
     panels = {"linear": _panel(setup, "linear", x0, fixed, limits),
               "mlp": _panel(setup, "mlp", x0, fixed, limits)}
 
+    if view == "around":
+        for which, p in panels.items():
+            _around(setup, which, x0, p)
+        query["x"], query["y"] = 0.0, 0.0
+
     deltas = _feature_deltas(setup, x0, panels, rule)
     for j, row in enumerate(deltas):
         row["missing"] = (bool(not provided[j]) if custom is not None
                           else bool(data.missing_mask[query["id"], j]))
     for p in panels.values():
-        del p["_cf_rob_full"], p["_cf_std_full"]
+        del p["_cf_rob_full"], p["_cf_std_full"], p["_theta_w"]
 
     idx, si = setup["scatter_idx"], setup["scatter_info"]
     pts_payload = [{"id": int(i), "x": float(emb[i, 0]), "y": float(emb[i, 1]),
@@ -514,6 +620,10 @@ def get_scene(dataset_key, eps=0.03, query_id=None, custom=None, constraints=Non
         "dataset": data.name,
         "class_names": list(data.class_names),
         "eps": eps,
+        "view": view,
+        # To place a what-if person on an "around" slice: (real - mean) / scale.
+        "std": {"mean": [float(v) for v in data.scaler.mean_],
+                "scale": [float(v) for v in data.scaler.scale_]},
         "lens": {"key": lens.key, "label": lens.label,
                  "is_linear": bool(lens.is_linear),
                  "extra": lens.extra, "blurb": lens.blurb,

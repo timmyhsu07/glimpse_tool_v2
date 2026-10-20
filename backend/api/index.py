@@ -231,6 +231,23 @@ def _map_point(value):
     return [float(v) for v in value]
 
 
+def _map_plane(value):
+    """A panel's slice {origin: [d numbers], axes: [[d numbers], [d numbers]]}, or None."""
+    if not isinstance(value, dict):
+        return None
+    origin, axes = value.get("origin"), value.get("axes")
+
+    def numbers(v):
+        return (isinstance(v, list) and 0 < len(v) <= 500 and
+                all(isinstance(t, (int, float)) and not isinstance(t, bool)
+                    and math.isfinite(t) and abs(t) < 1e6 for t in v))
+    if not numbers(origin) or not isinstance(axes, list) or len(axes) != 2:
+        return None
+    if not all(numbers(a) and len(a) == len(origin) for a in axes):
+        return None
+    return {"origin": [float(v) for v in origin], "axes": [[float(v) for v in a] for a in axes]}
+
+
 def route(method, path, query, body, headers=None):
     """Return an HTTP status and JSON response for an API request.
 
@@ -263,8 +280,12 @@ def route(method, path, query, body, headers=None):
         rules, err = _clean_rules(q.get("rules", [None])[0])
         if err:
             return 400, {"error": err}
+        view = q.get("view", ["everyone"])[0]
+        if view not in gs.VIEWS:
+            return 400, {"error": f"'view' must be one of {', '.join(gs.VIEWS)}"}
         try:
-            return 200, gs.scene(ds, query_id=q.get("query", [None])[0], constraints=rules)
+            return 200, gs.scene(ds, query_id=q.get("query", [None])[0], constraints=rules,
+                                 view=view)
         except Exception as exc:
             return 500, {"error": str(exc)}
 
@@ -279,13 +300,23 @@ def route(method, path, query, body, headers=None):
         rules, err = _clean_rules(data.get("rules"))
         if err:
             return 400, {"error": err}
+        view = data.get("view", "everyone")
+        if view not in gs.VIEWS:
+            return 400, {"error": f"'view' must be one of {', '.join(gs.VIEWS)}"}
         if "point" in data:                       # an empty spot clicked on the map
             point = _map_point(data["point"])
             if point is None:
                 return 400, {"error": "'point' must be [x, y] map coordinates"}
+            plane = None
+            if data.get("plane") is not None:     # clicked on an "around" slice
+                plane = _map_plane(data["plane"])
+                if plane is None:
+                    return 400, {"error": "'plane' must be {origin, axes}"}
             try:
-                values, outside = gs.decode(ds, point)
-                scene = gs.scene(ds, custom=values, constraints=rules)
+                values, outside = gs.decode(ds, point, plane=plane)
+                scene = gs.scene(ds, custom=values, constraints=rules, view=view)
+            except ValueError as exc:
+                return 400, {"error": str(exc)}
             except Exception as exc:
                 return 500, {"error": str(exc)}
             scene["query"]["from_map"] = True
@@ -295,7 +326,7 @@ def route(method, path, query, body, headers=None):
         if err:
             return 400, {"error": err}
         try:
-            return 200, gs.scene(ds, custom=clean, constraints=rules)
+            return 200, gs.scene(ds, custom=clean, constraints=rules, view=view)
         except Exception as exc:
             return 500, {"error": str(exc)}
 

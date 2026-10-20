@@ -61,5 +61,57 @@ class MapClickTests(unittest.TestCase):
             self.assertEqual(code, 400, point)
 
 
+class AroundViewTests(unittest.TestCase):
+    """"Around this person": each model's map is a slice through the person that
+    holds that model's suggested changes."""
+
+    @classmethod
+    def setUpClass(cls):
+        code, cls.scene = index.route("GET", "/api/scene", "dataset=pima&view=around", None)
+        assert code == 200
+
+    def test_shared_map_is_the_default(self):
+        _, scene = index.route("GET", "/api/scene", "dataset=pima", None)
+        self.assertEqual(scene["view"], "everyone")
+        self.assertNotIn("plane", scene["panels"]["linear"])
+
+    def test_person_in_the_middle_and_changes_shown_whole(self):
+        s = self.scene
+        self.assertEqual(s["view"], "around")
+        self.assertEqual((s["query"]["x"], s["query"]["y"]), (0.0, 0.0))
+        for which, p in s["panels"].items():
+            self.assertEqual(len(p["xy"]), len(s["points"]))
+            self.assertEqual(p["metrics"]["quick_on_map"], 1.0, which)
+            self.assertEqual(p["metrics"]["safe_on_map"], 1.0, which)
+            for kind in ("standard", "ellice"):      # arrow length = true size of the change
+                c = p["cfs"][kind]
+                self.assertAlmostEqual(math.hypot(c["x"], c["y"]), c["distance"], places=3)
+
+    def test_clicking_the_quick_change_gives_that_change(self):
+        for which in ("linear", "mlp"):
+            p = self.scene["panels"][which]
+            c = p["cfs"]["standard"]
+            code, s2 = post_scene({"dataset": "pima", "view": "around", "point": [c["x"], c["y"]],
+                                   "plane": p["plane"]})
+            self.assertEqual(code, 200)
+            self.assertTrue(s2["query"]["from_map"])
+            chance = s2["panels"][which]["metrics"]["p_bad_erm_x0"]
+            self.assertLess(chance, 0.5, which)                   # just past the model's line
+            if which == "linear":
+                self.assertAlmostEqual(chance, 1 / (1 + math.exp(0.1)), places=2)
+
+    def test_rejects_bad_views_and_planes(self):
+        self.assertEqual(index.route("GET", "/api/scene", "dataset=pima&view=sideways", None)[0], 400)
+        self.assertEqual(post_scene({"dataset": "pima", "view": "sideways", "custom": {}})[0], 400)
+        p = self.scene["panels"]["linear"]["plane"]
+        o, a = p["origin"], p["axes"]
+        for plane in ("x", {"origin": o}, {"origin": o[:-1], "axes": a},
+                      {"origin": o, "axes": [a[0]]}, {"origin": [float("nan")] * len(o), "axes": a},
+                      {"origin": o[:-1], "axes": [a[0][:-1], a[1][:-1]]}):
+            code, _ = post_scene({"dataset": "pima", "view": "around", "point": [0, 0],
+                                  "plane": plane})
+            self.assertEqual(code, 400, plane)
+
+
 if __name__ == "__main__":
     unittest.main()

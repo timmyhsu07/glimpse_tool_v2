@@ -54,8 +54,8 @@ api/index.py         Vercel entry point; loads backend/api/index.py
 | Method | Path | |
 |---|---|---|
 | GET | `/api/datasets` | dataset list |
-| GET | `/api/scene?dataset=&query=` | scene for a person in the data |
-| POST | `/api/scene` | `{dataset, custom}` entered values, or `{dataset, point: [x, y]}` a map spot |
+| GET | `/api/scene?dataset=&query=&view=` | scene for a person in the data; `view=around` rebuilds each map around them |
+| POST | `/api/scene` | `{dataset, custom}` entered values, or `{dataset, point: [x, y]}` a map spot (add `plane` from a panel to decode a click on an "around" map); both take `view` |
 | GET | `/api/me` | the signed-in user, or `null` |
 | POST | `/api/register`, `/api/login`, `/api/logout` | accounts (no email verification) |
 | POST | `/api/people` | `{dataset, people: [{feature: value}, ...]}` predictions and map spots, no map (max 60) |
@@ -76,6 +76,13 @@ The site draws a PCA map (`MAP_LENS = "pca"` in `backend/engine/cf_core.py`); se
 less of it (Diabetes 65% vs 99%, Breast cancer 76% vs 97%) and draws suggested changes on the
 correct side of their line less often (Diabetes 55% vs 64%, Breast cancer 34% vs 43%). The
 suggestions themselves are the same either way.
+
+**Around this person** (`view=around`) rebuilds each model's map as a flat slice through the
+person that holds both of that model's suggested changes (`change_plane` / `_around` in
+`cf_core.py`). The changes then show whole, at their true distance and direction, and the
+background and lines are the models' exact answers on that slice; other people are placed by
+how they differ from the person along it. A click on that map is decoded through the panel's
+`plane` ({origin, axes}, standardized), and lands exactly where clicked.
 
 ## How suggested changes work
 

@@ -50,6 +50,10 @@
           <input type="checkbox" id="old-graph"> Old GLIMPSE graph (test)</label>
       </div>
       <div class="map-tools">
+        <div id="around-toggle" class="seg" role="group" aria-label="What the map is built around">
+          <button type="button" data-around="everyone">Everyone</button>
+          <button type="button" data-around="around">Around this person</button>
+        </div><span id="around-tip"></span>
         <div id="map-toggle" role="group" aria-label="Which model's map">
           <button type="button" data-view="linear">Simple</button>
           <button type="button" data-view="mlp">Flexible</button>

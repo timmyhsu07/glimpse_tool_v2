@@ -25,10 +25,10 @@ def _ensure(dataset, eps):
             cf_core._LENSES[key] = blob["lens"]
 
 
-def scene(dataset, eps=EPS, query_id=None, custom=None, constraints=None):
+def scene(dataset, eps=EPS, query_id=None, custom=None, constraints=None, view="everyone"):
     _ensure(dataset, eps)
     return cf_core.get_scene(dataset, eps=eps, query_id=query_id, custom=custom,
-                             constraints=constraints)
+                             constraints=constraints, view=view)
 
 
 def people(dataset, customs, eps=EPS):
@@ -36,10 +36,11 @@ def people(dataset, customs, eps=EPS):
     return cf_core.people(dataset, customs, eps=eps)
 
 
-def decode(dataset, point, eps=EPS):
+def decode(dataset, point, eps=EPS, plane=None):
     _ensure(dataset, eps)
-    return cf_core.decode_point(dataset, point, eps=eps)
+    return cf_core.decode_point(dataset, point, eps=eps, plane=plane)
 
 
 DATASETS = cf_core.DATASETS
+VIEWS = cf_core.VIEWS
 VALID = {d["key"] for d in DATASETS}

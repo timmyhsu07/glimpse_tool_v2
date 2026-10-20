@@ -26,7 +26,8 @@ const PALETTE = {
 };
 
 const G = window.GLIMPSE;
-const state = { dataset: "pima", query: null, custom: null, point: null, rules: {} };
+const state = { dataset: "pima", query: null, custom: null, point: null, plane: null,
+                rules: {}, view: "everyone" };
 const RULES_KEY = "glimpse-rules:";
 
 const el = (id) => document.getElementById(id);
@@ -42,6 +43,8 @@ let panelItems = [];
 const PENDING_KEY = "glimpse-pending-save";
 const VIEW_KEY = "glimpse-map-view";
 const GRAPH_KEY = "glimpse-old-graph";
+const AROUND_KEY = "glimpse-map-around";
+let sceneSeq = 0;
 const DISPUTED_SHARE = 0.15;      // "most disputed" = this share with the widest ranges
 let mapView = "both";
 let oldGraph = false;             // false = density map (default), true = the dot map
@@ -122,8 +125,8 @@ function buildPanelTraces(scene, which) {
   traces.push(...polyTraces(panel.fan, P.fan, 1, 0.18,
                             "other good models", legend));
 
-  if (oldGraph) traces.push(...dotTraces(scene, legend));
-  else traces.push(densityTrace(scene));
+  if (oldGraph) traces.push(...dotTraces(scene, which, legend));
+  else traces.push(densityTrace(scene, which));
 
   traces.push(...polyTraces(panel.boundary, P.line, 2.6, 1,
                             "model's line", legend));
@@ -163,8 +166,17 @@ const arrowTarget = (scene, which) =>
   safeOk(scene, which) ? scene.panels[which].cfs.ellice
     : quickOk(scene, which) ? scene.panels[which].cfs.standard : null;
 
+// The people on one panel: the shared map, or this model's slice around the person.
+function panelPoints(scene, which) {
+  const panel = scene.panels[which];
+  if (!panel.xy) return scene.points;
+  return panel._pts || (panel._pts =
+    scene.points.map((p, i) => ({ ...p, x: panel.xy[i][0], y: panel.xy[i][1] })));
+}
+
 // The dot map ("old GLIMPSE graph"): one dot per person, with a hover card.
-function dotTraces(scene, legend) {
+function dotTraces(scene, which, legend) {
+  const pts = panelPoints(scene, which);
   const kf = scene.key_features || [];
   const [goodName, badName] = scene.class_names;
   const card = (p) => {
@@ -177,7 +189,7 @@ function dotTraces(scene, legend) {
   const traces = [];
   const P = pal();
   for (const [c, color, label] of [[0, P.good, goodName], [1, P.bad, badName]]) {
-    const sel = scene.points.filter((p) => p.outcome === c);
+    const sel = pts.filter((p) => p.outcome === c);
     traces.push({
       type: "scatter", mode: "markers",
       x: sel.map((p) => p.x), y: sel.map((p) => p.y),
@@ -188,7 +200,7 @@ function dotTraces(scene, legend) {
     });
   }
   if (showDisputed) {
-    const sel = disputed(scene);
+    const sel = disputed(pts);
     traces.push({
       type: "scatter", mode: "markers", x: sel.map((p) => p.x), y: sel.map((p) => p.y),
       marker: { size: 11, color: "rgba(0,0,0,0)",
@@ -200,8 +212,8 @@ function dotTraces(scene, legend) {
 }
 
 // The people the models disagree about most: the widest chance ranges.
-function disputed(scene) {
-  const pts = scene.points, n = Math.max(1, Math.round(pts.length * DISPUTED_SHARE));
+function disputed(pts) {
+  const n = Math.max(1, Math.round(pts.length * DISPUTED_SHARE));
   return [...pts].sort((a, b) => (b.hi - b.lo) - (a.hi - a.lo)).slice(0, n);
 }
 
@@ -212,9 +224,12 @@ function disputed(scene) {
 // orange background; see-through outside the bands.
 const DENS_GRID = 110;            // grid cells per side
 const DENS_BANDS = [0.2, 0.4, 0.6, 0.8];
-function densityGrid(scene) {
-  if (scene._density) return scene._density;
-  const xs = scene.points.map((p) => p.x), ys = scene.points.map((p) => p.y);
+function densityGrid(scene, which) {
+  const key = scene.panels[which].xy ? which : "all";
+  scene._density = scene._density || {};
+  if (scene._density[key]) return scene._density[key];
+  const pts = panelPoints(scene, which);
+  const xs = pts.map((p) => p.x), ys = pts.map((p) => p.y);
   const n = xs.length;
   const spread = (v) => {
     const s = [...v].sort((a, b) => a - b), mean = v.reduce((a, b) => a + b, 0) / n;
@@ -256,13 +271,13 @@ function densityGrid(scene) {
     while (lo < hi) { const m = (lo + hi) >> 1; if (own[m] < v) lo = m + 1; else hi = m; }
     return lo / n;
   };
-  scene._density = { x: gx, y: gy, z: z.map((row) => Array.from(row, depth)) };
-  return scene._density;
+  scene._density[key] = { x: gx, y: gy, z: z.map((row) => Array.from(row, depth)) };
+  return scene._density[key];
 }
 
-function densityTrace(scene) {
+function densityTrace(scene, which) {
   const c = pal().density;
-  const d = densityGrid(scene);
+  const d = densityGrid(scene, which);
   return {
     type: "contour", x: d.x, y: d.y, z: d.z, zmin: 0, zmax: 1,
     contours: { start: DENS_BANDS[0], end: DENS_BANDS[DENS_BANDS.length - 1],
@@ -279,10 +294,12 @@ function densityTrace(scene) {
 // shrinking the plot area, never by changing these ranges. A map click keeps the
 // current view: the star lands under the pointer and the map does not shift.
 function viewRanges(div, scene, which) {
-  const fl = div._fullLayout;
-  if (scene.query.from_map && fl && fl.xaxis && div.dataset.view === scene.dataset)
+  // An "around" map is rebuilt for each person, so it is always framed afresh.
+  const fl = div._fullLayout, key = `${scene.dataset}:${scene.view}`;
+  if (scene.view !== "around" && scene.query.from_map && fl && fl.xaxis &&
+      div.dataset.view === key)
     return [fl.xaxis.range.slice(), fl.yaxis.range.slice()];
-  div.dataset.view = scene.dataset;
+  div.dataset.view = key;
   return defaultRanges(scene, which);
 }
 
@@ -295,9 +312,9 @@ function quantile(sorted, f) {
   return sorted[lo] + (sorted[Math.ceil(i)] - sorted[lo]) * (i - lo);
 }
 function defaultRanges(scene, which) {
-  const q = scene.query, to = arrowTarget(scene, which) || q;
-  const px = scene.points.map((p) => p.x).sort((a, b) => a - b);
-  const py = scene.points.map((p) => p.y).sort((a, b) => a - b);
+  const q = scene.query, to = arrowTarget(scene, which) || q, pts = panelPoints(scene, which);
+  const px = pts.map((p) => p.x).sort((a, b) => a - b);
+  const py = pts.map((p) => p.y).sort((a, b) => a - b);
   const xs = [quantile(px, FRAME_PCT), quantile(px, 1 - FRAME_PCT), q.x, to.x];
   const ys = [quantile(py, FRAME_PCT), quantile(py, 1 - FRAME_PCT), q.y, to.y];
   const grow = (lo, hi) => [lo - 0.08 * (hi - lo), hi + 0.08 * (hi - lo)];
@@ -307,12 +324,15 @@ function defaultRanges(scene, which) {
 function panelLayout(scene, which) {
   const q = scene.query, cf = scene.panels[which].cfs;
   const [xr, yr] = viewRanges(plotDivs[which], scene, which);
-  const tc = themeColors();
+  const tc = themeColors(), around = scene.view === "around";
+  scene._rev = scene._rev || ++sceneSeq;
   return {
     paper_bgcolor: tc.paper, plot_bgcolor: tc.plot, font: { color: tc.font },
-    margin: { l: 8, r: which === "mlp" ? 4 : 10, t: 6, b: 8 },
+    margin: { l: 8, r: which === "mlp" ? 4 : 10, t: 6, b: around ? 24 : 8 },
     xaxis: { showticklabels: false, ticks: "", range: xr, zeroline: false, constrain: "domain",
-             color: tc.font },
+             color: tc.font,
+             title: around ? { text: "toward the suggested change →", standoff: 4,
+                               font: { size: 11, color: tc.font } } : undefined },
     yaxis: { showticklabels: false, ticks: "", range: yr, zeroline: false, constrain: "domain",
              scaleanchor: "x", scaleratio: 1, color: tc.font },
     legend: { x: 0.02, y: 0.98, bgcolor: tc.legendBg,
@@ -321,8 +341,9 @@ function panelLayout(scene, which) {
     showlegend: false, hovermode: "closest",
     // a dot is only picked when the pointer is on it; anywhere else is a spot
     hoverdistance: DOT_PX,
-    // keep the user's zoom while clicking around the same dataset
-    uirevision: scene.dataset,
+    // keep the user's zoom while clicking around the same dataset; an "around" map
+    // is new for each person
+    uirevision: around ? `around:${scene._rev}` : scene.dataset,
     annotations: arrowTarget(scene, which) ? [{
       x: arrowTarget(scene, which).x, y: arrowTarget(scene, which).y, ax: q.x, ay: q.y,
       xref: "x", yref: "y", axref: "x", ayref: "y",
@@ -376,6 +397,14 @@ function deltaLayout() {
 
 function renderLensNote(scene) {
   const L = scene.lens, q = L.quality;
+  if (scene.view === "around") {
+    el("lens-note").innerHTML = `<b>Around this person:</b> each model's map is a flat slice ` +
+      `through the person that holds both of its suggested changes. Distances from ★ to ✕ ` +
+      `and ▪ are true distances, and the colours and lines are the models' exact answers on ` +
+      `the slice. <span class="sub">Other people are placed by how they differ from this ` +
+      `person along the slice.</span>`;
+    return;
+  }
   el("lens-note").innerHTML =
     `<b>${L.label} map:</b> ${L.blurb} ` +
     `<span class="sub">Keeps who-is-near-whom about ` +
@@ -711,11 +740,26 @@ async function runWhatif() {
 // A hollow star on the maps shows where the what-if person would sit.
 function moveGhost(person) {
   if (!plotsReady) return;
-  for (const div of Object.values(plotDivs)) {
+  for (const [which, div] of Object.entries(plotDivs)) {
     const i = (div.data || []).findIndex((t) => t.name === "what if");
     if (i < 0) continue;
-    Plotly.restyle(div, { x: [[person ? person.x : null]], y: [[person ? person.y : null]] }, [i]);
+    const at = person && ghostSpot(which, person);
+    Plotly.restyle(div, { x: [[at ? at.x : null]], y: [[at ? at.y : null]] }, [i]);
   }
+}
+
+// Where a person sits on one panel: their shared-map spot, or projected onto this
+// model's "around" slice.
+function ghostSpot(which, person) {
+  const scene = lastScene, plane = scene && scene.panels[which].plane;
+  if (!plane) return person;
+  const z = [0, 0];
+  scene.deltas.forEach((r, j) => {
+    const v = (person.values[r.name] - scene.std.mean[j]) / scene.std.scale[j] - plane.origin[j];
+    z[0] += plane.axes[0][j] * v;
+    z[1] += plane.axes[1][j] * v;
+  });
+  return { x: z[0], y: z[1] };
 }
 
 el("whatif-reset").addEventListener("click", () => { if (lastScene) renderWhatif(lastScene); });
@@ -1114,18 +1158,21 @@ async function drawScene() {
   if (state.point) {
     resp = await fetch("/api/scene", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ dataset: state.dataset, point: state.point, rules: state.rules }),
+      body: JSON.stringify({ dataset: state.dataset, point: state.point, plane: state.plane,
+                             rules: state.rules, view: state.view }),
     });
   } else if (state.custom) {
     resp = await fetch("/api/scene", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ dataset: state.dataset, custom: state.custom, rules: state.rules }),
+      body: JSON.stringify({ dataset: state.dataset, custom: state.custom, rules: state.rules,
+                             view: state.view }),
     });
   } else {
     const url = new URL("/api/scene", location.origin);
     url.searchParams.set("dataset", state.dataset);
     if (state.query != null) url.searchParams.set("query", state.query);
     if (Object.keys(state.rules).length) url.searchParams.set("rules", JSON.stringify(state.rules));
+    if (state.view !== "everyone") url.searchParams.set("view", state.view);
     resp = await fetch(url);
   }
   const scene = await resp.json();
@@ -1137,6 +1184,7 @@ async function drawScene() {
   if (scene.decoded) {
     state.custom = scene.decoded.values;
     state.point = null;
+    state.plane = null;
   }
   if (!scene.query.custom) state.query = scene.query.id;
   const rebuilt = formDataset !== state.dataset;
@@ -1181,6 +1229,25 @@ function setMapView(view, redraw) {
   }
 }
 
+// ---- what the map is built around: everyone (one shared map), or this person
+// (each model's map rebuilt so its suggested changes show whole)
+
+function setAround(view, redraw) {
+  state.view = view === "around" ? "around" : "everyone";
+  try { localStorage.setItem(AROUND_KEY, state.view); } catch (e) {}
+  for (const b of el("around-toggle").querySelectorAll("button"))
+    b.setAttribute("aria-pressed", String(b.dataset.around === state.view));
+  if (redraw && lastScene && !loading) refresh();
+}
+el("around-toggle").addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-around]");
+  if (b && b.dataset.around !== state.view) setAround(b.dataset.around, true);
+});
+try { setAround(localStorage.getItem(AROUND_KEY), false); } catch (e) { setAround("everyone", false); }
+el("around-tip").innerHTML = G.tip("Everyone: one map for all people. Around this person: " +
+  "each map is rebuilt around the star, so both suggested changes show at their true " +
+  "distance and direction.");
+
 el("map-toggle").addEventListener("click", (e) => {
   const b = e.target.closest("button[data-view]");
   if (b) setMapView(b.dataset.view, true);
@@ -1214,9 +1281,11 @@ function onClick(div, e) {
     state.query = id;
     state.custom = null;
     state.point = null;
+    state.plane = null;
   } else {
-    const fl = div._fullLayout;
+    const fl = div._fullLayout, which = div === plotDivs.linear ? "linear" : "mlp";
     state.point = [fl.xaxis.p2d(at[0]), fl.yaxis.p2d(at[1])];
+    state.plane = (lastScene && lastScene.panels[which].plane) || null;
     state.query = null;
   }
   refresh();
