@@ -14,6 +14,7 @@ from urllib.parse import urlparse, parse_qs  # noqa: E402
 
 import auth  # noqa: E402
 import db  # noqa: E402
+import summarize  # noqa: E402
 
 # Static files available when this handler runs from a normal web server.
 _HTML, _JS = "text/html; charset=utf-8", "application/javascript; charset=utf-8"
@@ -202,6 +203,35 @@ def _clean_rules(raw):
     return raw, None
 
 
+_MAX_SUMMARY_CHARS = 4000
+
+
+def _summarize_route(body):
+    """POST {text, question?} -> a summary, or an answer about that result."""
+    data = _json_object(body)
+    if data is None:
+        return 400, {"error": "invalid JSON body"}
+    text = data.get("text")
+    if not isinstance(text, str) or len(" ".join(text.split())) < 20:
+        return 400, {"error": "'text' must be a string of at least 20 characters"}
+    if len(text) > _MAX_SUMMARY_CHARS:
+        return 400, {"error": f"'text' must be at most {_MAX_SUMMARY_CHARS} characters"}
+    question = data.get("question", "")
+    if question is None:
+        question = ""
+    if not isinstance(question, str):
+        return 400, {"error": "'question' must be a string"}
+    question = " ".join(question.split())
+    if len(question) > 300:
+        return 400, {"error": "'question' must be at most 300 characters"}
+    try:
+        return 200, summarize.summarize(text, question)
+    except RuntimeError as exc:
+        return 503, {"error": str(exc)}
+    except Exception as exc:
+        return 500, {"error": str(exc)}
+
+
 def _people_route(body):
     """POST {dataset, people: [{feature: value}, ...]} -> predictions, no map."""
     data = _json_object(body)
@@ -275,6 +305,9 @@ def route(method, path, query, body, headers=None):
 
     if method == "POST" and p.endswith("/people"):
         return _people_route(body)
+
+    if method == "POST" and p.endswith("/summarize"):
+        return _summarize_route(body)
 
     gs = _service()
 

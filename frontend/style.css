@@ -123,6 +123,17 @@ h3 { font-size: 0.92rem; margin: 1rem 0 0.35rem; }
   border-radius: 5px; }
 .vbar i { position: absolute; top: -2px; width: 2px; height: 13px; background: var(--ink); }
 .vexpl { margin-top: 0.2rem; }
+#summary-row { margin-top: 0.75rem; }
+.summary-text { margin: 0.15rem 0 0.2rem; max-width: 40rem; line-height: 1.45; }
+.ask-form { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.35rem; }
+.ask-form input {
+  flex: 1 1 10rem; min-width: 0; font: inherit; font-size: 0.9rem;
+  padding: 0.28rem 0.55rem; border: 1px solid var(--line); border-radius: 6px;
+  background: var(--card); color: var(--ink);
+}
+.ask-q { margin: 0.55rem 0 0.1rem; font-weight: 650; }
+#ask-log { max-width: 40rem; }
+#summarize-btn:disabled, #ask-btn:disabled { opacity: 0.6; }
 
 /* Recommendations */
 #recommend { margin: 0 0 1.1rem; }

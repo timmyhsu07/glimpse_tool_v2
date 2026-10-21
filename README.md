@@ -26,6 +26,7 @@ with ECLIPSE, our experimental method, and `/eclipse.html` compares it with PCA.
 
 ```bash
 uv sync
+uv sync --extra summarize   # optional: small 4-bit summary model, loaded on first use
 PORT=8010 .venv/bin/python backend/server.py      # http://127.0.0.1:8010
 .venv/bin/python -m unittest discover -s backend/tests
 ```
