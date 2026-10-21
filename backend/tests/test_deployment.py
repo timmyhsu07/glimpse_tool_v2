@@ -32,7 +32,7 @@ class VercelConfigTests(unittest.TestCase):
     def test_bundled_paths_exist(self):
         for rel in ("api/index.py", "backend/api/index.py", "backend/engine/precomputed",
                     "frontend/index.html", "frontend/login.html", "frontend/how.html",
-                    "frontend/eclipse.html"):
+                    "frontend/eclipse.html", "frontend/details.html"):
             self.assertTrue((ROOT / rel).exists(), rel)
 
     def test_entry_point_exposes_the_backend_handler(self):

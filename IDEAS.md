@@ -48,7 +48,9 @@ Status: [x] done, [~] partly done, [ ] not started.
 5. What would change it
    - [x] Top 3 changes per model as cards: before → after, unit, effort tag (easy / harder).
    - [x] Can't-change values as grey lock chips, no explanation text.
-   - [x] "Quickest change" and "Safest change" tabs with icons.
+   - [x] Three changes listed explicitly (2026-10-20): smallest change, fewest changes (as
+         few values as possible) and safest change; tabs on the details page, a short list on
+         the map page, and ◆ on the map for fewest changes.
    - [x] "What if" sliders: the chance updates live and a hollow star moves on the map.
    - [x] Checklist plan with a live result, saved to the account and comparable with now.
 6. Compare
@@ -72,6 +74,12 @@ Status: [x] done, [~] partly done, [ ] not started.
 10. Expert view
    - [x] "Details for experts" keeps the exact numbers.
    - [ ] CSV download.
+
+## Map page vs details page (2026-10-20)
+
+- [x] The map page keeps the essentials: map, chance, three ways to change it, what you can
+      change, enter your numbers. "See all details" opens details.html for the same person with
+      everything else.
 
 ## Across all pages
 

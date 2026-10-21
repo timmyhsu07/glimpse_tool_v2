@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="google-site-verification" content="mQlGSmTbCYFctZavIyGIMyBsTILOaBCQHSwizkSydew">
-  <meta name="description" content="How GLIMPSE works: reading the map, close calls, and the quickest and safest changes.">
+  <meta name="description" content="How GLIMPSE works: reading the map, close calls, and the three ways to change a result.">
   <title>How it works — GLIMPSE</title>
   <script>
     // Apply the saved theme before the page renders.
@@ -56,7 +56,7 @@
       <a href="#read-map">Reading the map</a>
       <a href="#close-call">Close call</a>
       <a href="#drove">What drove it</a>
-      <a href="#quick-safe">Quickest and safest change</a>
+      <a href="#quick-safe">Three ways to change it</a>
       <a href="#can-change">What you can change</a>
       <a href="#flat-map">What the map can't show</a>
       <a href="#data">The data</a>
@@ -90,8 +90,9 @@
         <dd>Thin lines: models that fit the data about as well as the main one.</dd>
         <dt id="strictest">Strictest model</dt>
         <dd>The good model least on your side. Past its line, every good model agrees.</dd>
-        <dt>★ ✕ ▪</dt>
-        <dd>You, the quick change, and the safe change. The arrow points where to go.</dd>
+        <dt>★ ✕ ◆ ▪</dt>
+        <dd>You, the smallest change, the change with fewest values, and the safest change.
+          The arrow points to the safest one.</dd>
         <dt>Click anywhere</dt>
         <dd>Shows the estimated person who would sit at that spot.</dd>
         <dt id="around">Around this person</dt>
@@ -117,8 +118,11 @@
     </section>
 
     <section id="quick-safe" class="how-sec">
-      <h2>Quickest and safest change</h2>
-      <p><b>Quickest change</b>: the smallest change that flips the main model's answer.</p>
+      <h2>Three ways to change it</h2>
+      <p><b>Smallest change</b> (✕): the least total change that flips the main model's answer.
+        It may nudge several values a little.</p>
+      <p><b>Fewest changes</b> (◆): touches as few values as possible, often just one, even if
+        that one moves further.</p>
       <p><b>Safest change</b>: the smallest change that flips every good model's answer.
         It is usually bigger.</p>
       <p>Sometimes no safe change exists with the values you can change. GLIMPSE says so

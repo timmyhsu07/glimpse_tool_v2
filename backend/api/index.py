@@ -28,6 +28,8 @@ _STATIC = {
     "/account.html": ("account.html", _HTML),
     "/compare": ("compare.html", _HTML),
     "/compare.html": ("compare.html", _HTML),
+    "/details": ("details.html", _HTML),
+    "/details.html": ("details.html", _HTML),
     "/how": ("how.html", _HTML),
     "/how.html": ("how.html", _HTML),
     "/eclipse": ("eclipse.html", _HTML),

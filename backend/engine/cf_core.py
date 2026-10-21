@@ -1,5 +1,7 @@
 """Build the linear and MLP counterfactual views as JSON."""
 import sys
+from itertools import combinations
+
 import numpy as np
 from contourpy import contour_generator
 
@@ -275,6 +277,8 @@ def _around(setup, which, x0, panel):
     )
     panel["cfs"]["standard"].update(x=float(std_2d[0]), y=float(std_2d[1]))
     panel["cfs"]["ellice"].update(x=float(rob_2d[0]), y=float(rob_2d[1]))
+    sp = A @ (panel["_cf_sparse_full"] - x0)       # may sit partly off the slice
+    panel["cfs"]["sparse"].update(x=float(sp[0]), y=float(sp[1]))
     m = panel["metrics"]
     for key, cf in (("quick_on_map", panel["_cf_std_full"]), ("safe_on_map", panel["_cf_rob_full"])):
         size = float(np.linalg.norm(cf - x0))
@@ -431,6 +435,52 @@ def _rules(setup, x0, constraints=None):
     return fixed, (lo, hi), rule
 
 
+SPARSE_MAX = 3      # "fewest changes" looks for a change to at most this many values
+SPARSE_POOL = 8     # among this many of the most promising values
+CHANGED = 0.05      # a value counts as changed past this (standardized), as on the cards
+
+
+def _sparse_cf(setup, which, x0, fixed, limits, quick):
+    """The change that touches the fewest values, and among those the smallest.
+
+    Tries changing 1, 2, ... SPARSE_MAX values, chosen from the SPARSE_POOL values that
+    can push the score furthest toward the target within their limits; each try is the
+    model's own smallest change with every other value held. For the simple model a
+    set is only tried if it can reach the line at all (exact). Falls back to the quick
+    change when no small set works. Returns (change, works).
+    """
+    lo, hi = limits
+    if which == "linear":
+        model, w = setup["lin_ell"], setup["lin"].w
+        logit = lambda x: float(setup["lin"].logit(x[None, :])[0])
+        slope = w
+    else:
+        model = setup["mlp"]
+        logit = lambda x: float(model.logit(x[None, :])[0])
+        slope = model._logit_grad(x0)
+    need = logit(x0) + MARGIN                      # how far the score has to fall
+    if need <= 0:
+        return x0.copy(), True
+    room = np.where(slope > 0, x0 - lo, hi - x0)   # room to move the helpful way
+    push = np.where(fixed, 0.0, np.abs(slope) * np.maximum(room, 0.0))
+    pool = [j for j in np.argsort(-push)[:SPARSE_POOL] if push[j] > 1e-9]
+    for k in range(1, SPARSE_MAX + 1):
+        best, best_d = None, np.inf
+        for S in combinations(pool, k):
+            if which == "linear" and push[list(S)].sum() < need - 1e-9:
+                continue                           # can't reach the line with these
+            hold = np.ones(len(x0), dtype=bool)
+            hold[list(S)] = False
+            cf = model.standard_cf(x0, TARGET_CLASS, margin=MARGIN, fixed=hold | fixed,
+                                   limits=limits)
+            d = float(np.linalg.norm(cf - x0))
+            if -logit(cf) >= MARGIN - 1e-3 and d < best_d:
+                best, best_d = cf, d
+        if best is not None:
+            return best, True
+    return quick.copy(), bool(-logit(quick) >= MARGIN - 1e-3)
+
+
 def _panel(setup, which, x0, fixed=None, limits=None):
     """Build one model panel for a query."""
     lens, bounds = setup["lens"], setup["bounds"]
@@ -465,8 +515,17 @@ def _panel(setup, which, x0, fixed=None, limits=None):
         rob_x0 = float(mlp.robust_logit(x0[None, :], TARGET_CLASS)[0])
         rob_cf = float(mlp.robust_logit(cf_rob[None, :], TARGET_CLASS)[0])
 
+    cf_sparse, sparse_ok = _sparse_cf(setup, which, x0, fixed, limits, cf_std)
+    if which == "linear":
+        logit_sparse = float(model.logit(cf_sparse)[0])
+        rob_sparse = float(ell.robust_logit(cf_sparse, TARGET_CLASS)[0])
+    else:
+        logit_sparse = float(mlp.logit(cf_sparse[None, :])[0])
+        rob_sparse = float(mlp.robust_logit(cf_sparse[None, :], TARGET_CLASS)[0])
     std_2d = lens.embed(cf_std)[0]
     rob_2d = lens.embed(cf_rob)[0]
+    sparse_2d = lens.embed(cf_sparse)[0]
+    n_changed = lambda cf: int((np.abs(cf - x0) > CHANGED).sum())
 
     boundary = setup[f"{'lin' if which == 'linear' else 'mlp'}_boundary"]
     d_erm = _dist_to_lines(rob_2d, boundary)
@@ -490,6 +549,14 @@ def _panel(setup, which, x0, fixed=None, limits=None):
         # map can't show), so the page can say when the picture undersells it.
         "quick_on_map": _on_map(lens, cf_std - x0),
         "safe_on_map": _on_map(lens, cf_rob - x0),
+        # The three changes listed on the map page: chance after, and values changed.
+        "sparse_ok": bool(sparse_ok),
+        "sparse_safe": bool(rob_sparse >= MARGIN - 1e-3),
+        "p_bad_quick": _sigmoid(logit_std),
+        "p_bad_sparse": _sigmoid(logit_sparse),
+        "n_quick": n_changed(cf_std),
+        "n_sparse": n_changed(cf_sparse),
+        "n_safe": n_changed(cf_rob),
         "cost_std": float(np.linalg.norm(cf_std - x0)),
         "cost_rob": float(np.linalg.norm(cf_rob - x0)),
         "already_robust": bool(rob_x0 >= 0),
@@ -513,10 +580,13 @@ def _panel(setup, which, x0, fixed=None, limits=None):
         "cfs": {"standard": {"x": float(std_2d[0]), "y": float(std_2d[1]),
                              "distance": round(float(np.linalg.norm(cf_std - x0)), 3)},
                 "ellice":   {"x": float(rob_2d[0]), "y": float(rob_2d[1]),
-                             "distance": round(float(np.linalg.norm(cf_rob - x0)), 3)}},
+                             "distance": round(float(np.linalg.norm(cf_rob - x0)), 3)},
+                "sparse":   {"x": float(sparse_2d[0]), "y": float(sparse_2d[1]),
+                             "distance": round(float(np.linalg.norm(cf_sparse - x0)), 3)}},
         "metrics": metrics,
         "_cf_rob_full": cf_rob,
         "_cf_std_full": cf_std,
+        "_cf_sparse_full": cf_sparse,
         "_theta_w": theta_w,
     }
 
@@ -545,7 +615,8 @@ def _feature_deltas(setup, x0, panels, rule=None):
             "pct_x0": _percentile(data.X[:, j], x0[j]),
         }
         for key, panel in panels.items():
-            for suffix, cf in (("", panel["_cf_rob_full"]), ("_quick", panel["_cf_std_full"])):
+            for suffix, cf in (("", panel["_cf_rob_full"]), ("_quick", panel["_cf_std_full"]),
+                               ("_sparse", panel["_cf_sparse_full"])):
                 d_std = float(cf[j] - x0[j])
                 row[key + suffix] = {
                     "delta_std": round(d_std, 4),
@@ -737,7 +808,7 @@ def get_scene(dataset_key, eps=0.03, query_id=None, custom=None, constraints=Non
         row["missing"] = (bool(not provided[j]) if custom is not None
                           else bool(data.missing_mask[query["id"], j]))
     for p in panels.values():
-        del p["_cf_rob_full"], p["_cf_std_full"], p["_theta_w"]
+        del p["_cf_rob_full"], p["_cf_std_full"], p["_cf_sparse_full"], p["_theta_w"]
     drivers = _drivers(setup, x0)
 
     idx, si = setup["scatter_idx"], setup["scatter_info"]

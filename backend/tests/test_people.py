@@ -147,6 +147,23 @@ class RuleTests(unittest.TestCase):
         self.assertEqual(feats["Age"]["monotone"], "up")
         self.assertFalse(feats["Age"]["immutable"])
 
+    def test_fewest_changes_touches_fewest_values_and_still_works(self):
+        for custom in ({"Glucose": 170, "BMI": 38}, {"Glucose": 150, "BMI": 33, "Insulin": 200}):
+            _, out = self.scene(custom=custom)
+            for key in ("linear", "mlp"):
+                m = out["panels"][key]["metrics"]
+                if not m["pred_bad"]:
+                    continue
+                self.assertTrue(m["sparse_ok"], key)
+                self.assertLess(m["p_bad_sparse"], 0.5, key)            # flips the model
+                self.assertLessEqual(m["n_sparse"], m["n_quick"], key)  # never more values
+                moved = [r["name"] for r in out["deltas"] if abs(r[key + "_sparse"]["delta_std"]) > 1e-6]
+                self.assertLessEqual(len(moved), 3, key)
+                self.assertNotIn("DiabetesPedigreeFunction", moved)     # locked stays put
+                for r in out["deltas"]:
+                    if r["rule"] == "up":
+                        self.assertGreaterEqual(r[key + "_sparse"]["cf_real"], r["x0_real"] - 1e-3)
+
     def test_what_drove_it_adds_up_and_covers_every_good_model(self):
         _, out = self.scene()
         for key in ("linear", "mlp"):

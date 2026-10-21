@@ -5,7 +5,13 @@ const state = { dataset: "pima", query: null, custom: null, point: null, plane: 
                 rules: {}, view: "everyone", lens: null };
 const RULES_KEY = "glimpse-rules:";
 
-const el = (id) => document.getElementById(id);
+// The map page and the details page share this script. A section a page doesn't have
+// renders into a detached element instead.
+const detached = {};
+const el = (id) => document.getElementById(id) ||
+  (detached[id] = detached[id] || document.createElement("div"));
+const HAS_MAP = !!document.getElementById("plot-linear");
+const HAS_DELTA = !!document.getElementById("plot-delta");
 const plotDivs = { linear: el("plot-linear"), mlp: el("plot-mlp") };
 const deltaDiv = el("plot-delta");
 let plotsReady = false;
@@ -56,6 +62,7 @@ function themeColors() {
 document.addEventListener("glimpse-theme", () => {
   if (plotsReady && lastScene) {
     redrawPlots(lastScene);
+    renderWays(lastScene);
     renderLegend(lastScene);
   }
 });
@@ -121,6 +128,8 @@ function buildPanelTraces(scene, which) {
   });
   if (quickOk(scene, which))
     traces.push(markerTrace(cf.standard, P.quick, "quick change", "x", 11));
+  if (sparseOk(scene, which) && scene.panels[which].metrics.pred_bad)
+    traces.push(markerTrace(cf.sparse, P.line, "fewest changes", "diamond", 10));
   if (safeOk(scene, which))
     traces.push(markerTrace(cf.ellice, P.safe, "safe change", "square", 10));
   traces.push({
@@ -135,7 +144,12 @@ function buildPanelTraces(scene, which) {
 // didn't (it can't, e.g. on Credit with the locked values), nothing is shown as "safe".
 const safeOk = (scene, which) => scene.panels[which].metrics.safe_ok !== false;
 const quickOk = (scene, which) => scene.panels[which].metrics.quick_ok !== false;
-const kindOk = (scene, which, kind) => (kind === "safe" ? safeOk : quickOk)(scene, which);
+const sparseOk = (scene, which) => scene.panels[which].metrics.sparse_ok !== false;
+const kindOk = (scene, which, kind) =>
+  ({ safe: safeOk, sparse: sparseOk }[kind] || quickOk)(scene, which);
+// The per-value column for a kind: "linear" (safe), "linear_quick", "linear_sparse".
+const kindKey = (which, kind) => (kind === "safe" ? which : `${which}_${kind}`);
+const KIND_NAME = { quick: "Smallest change", sparse: "Fewest changes", safe: "Safest change" };
 // Where the map's arrow points: the safe change if there is one, else the quick one,
 // else nowhere.
 const arrowTarget = (scene, which) =>
@@ -403,11 +417,12 @@ function renderLegend(scene) {
     `<li><span class="sw line" style="background:${P.line}"></span> Model’s line</li>`,
     `<li><span class="sw line" style="background:${P.fan}"></span> Other good models</li>`,
     `<li><span class="sw line dash" style="color:${P.worst}"></span> Strictest model (dashed)</li>`,
-    `<li>★ You · ✕ Quick change · ▪ Safe change</li>`,
+    `<li>★ You · ✕ Smallest change · ◆ Fewest changes · ▪ Safest change</li>`,
     `<li>${G.tip("Background: the simple model’s chance of " + b + ". " +
       "Line: where it flips. Other good models: models that fit the data about as well. " +
-      "Strictest: the one least on your side. Quick change: smallest change for this model. " +
-      "Safe change: smallest change that works for every good model.")}</li>`,
+      "Strictest: the one least on your side. Smallest change: least total change for this " +
+      "model. Fewest changes: touches as few values as possible. Safest change: works for " +
+      "every good model.")}</li>`,
     `<li><a href="/how.html#read-map">How to read the map</a></li>`,
   ].join("");
 }
@@ -455,7 +470,8 @@ function renderCompare(scene) {
   const shown = compareAll ? rows : rows.slice(0, 6);
   const q = scene.query;
   const who = q.custom || q.from_map ? "You" : "This person";
-  el("compare-h").firstChild.textContent = q.from_map ? "How this spot compares " :
+  const title = el("compare-h").firstChild;
+  if (title) title.textContent = q.from_map ? "How this spot compares " :
     q.custom ? "How you compare " : "How this person compares ";
   el("compare-list").innerHTML = shown.map((r) => {
     const pctl = Math.round(r.pct_x0);
@@ -482,12 +498,12 @@ el("compare-more").addEventListener("click", () => {
 
 // ---- what would change it: quickest / safest tabs, change cards, what-if, plan
 
-let recoKind = "quick";               // "quick" = this model only, "safe" = every good model
+let recoKind = "quick";     // "quick" smallest / "sparse" fewest values: this model; "safe": every good model
 const EASY_SHIFT = 20;                 // rank points; a smaller move counts as "easy"
 
 // The top changes for one model: [{row or group, before, after, unit, shift}].
 function topChanges(scene, which, kind, n) {
-  const key = kind === "quick" ? which + "_quick" : which;
+  const key = kindKey(which, kind);
   const items = [];
   for (const it of displayRows(scene)) {
     if (it.kind === "group") {
@@ -539,7 +555,7 @@ function renderRecommend(scene) {
       return `<div class="reco-col"><div class="reco-h">${name}</div>
         <p class="reco-none">${recoKind === "safe"
           ? `No change you can make works for every good model.
-             <button type="button" class="link-btn" data-kind="quick">See the quickest change</button>`
+             <button type="button" class="link-btn" data-kind="quick">See the smallest change</button>`
           : "No change within realistic values flips this model."}</p></div>`;
     const cards = topChanges(scene, which, recoKind, 3);
     return `<div class="reco-col"><div class="reco-h">${name}</div>
@@ -556,6 +572,56 @@ function setRecoKind(kind) {
     renderChanges(lastScene);
   }
 }
+// ---- three ways to change it (map page): smallest, fewest values, safest
+
+let waysModel = "linear";
+
+function renderWays(scene) {
+  if (!document.getElementById("ways-list")) return;
+  const which = waysModel, m = scene.panels[which].metrics;
+  const [goodName, badName] = scene.class_names;
+  for (const b of el("ways-toggle").querySelectorAll("button"))
+    b.setAttribute("aria-pressed", String(b.dataset.model === which));
+  if (!m.pred_bad) {
+    el("ways-list").innerHTML = `<li class="way-ok">✓ Already ${G.esc(goodName)}. ` +
+      `Nothing needs to change.</li>`;
+    return;
+  }
+  const values = (n) => `${n} value${n === 1 ? "" : "s"}`;
+  const ways = [
+    { kind: "quick", icon: "✕", what: (n) => `Least total change · ${values(n)}`, after: m.p_bad_quick },
+    { kind: "sparse", icon: "◆", what: (n) => `Changes only ${values(n)}` +
+        (m.sparse_safe ? " · works for every good model" : ""), after: m.p_bad_sparse },
+    { kind: "safe", icon: "▪", what: (n) => `Works for every good model · ${values(n)}`,
+      after: m.p_bad_erm_cf },
+  ];
+  el("ways-list").innerHTML = ways.map((w) => {
+    const head = `<div class="way-top"><span class="way-ico" aria-hidden="true">${w.icon}</span>` +
+      `<b>${KIND_NAME[w.kind]}</b>`;
+    if (!kindOk(scene, which, w.kind))
+      return `<li class="way">${head}</div>
+        <div class="sub">None found with what you can change.</div></li>`;
+    const all = topChanges(scene, which, w.kind, 99);
+    const lines = all.slice(0, 3).map((c) => `${G.esc(c.label)} ${G.esc(c.before)} → ` +
+      `<b>${G.esc(c.after)}</b>${c.unit ? ` <span class="sub">${G.esc(c.unit)}</span>` : ""}`);
+    return `<li class="way">${head}
+        <span class="way-after" title="Chance of ${G.esc(badName)} after this change">→ ${pct(w.after)}</span></div>
+      <div class="way-what sub">${w.what(all.length)}</div>
+      <div class="way-vals">${lines.join("<br>") || "<span class='sub'>Changes too small to show.</span>"}` +
+      `${all.length > 3 ? ` <span class="sub">+${all.length - 3} more</span>` : ""}</div></li>`;
+  }).join("");
+}
+el("ways-toggle").addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-model]");
+  if (!b || !lastScene) return;
+  waysModel = b.dataset.model;
+  renderWays(lastScene);
+});
+el("ways-tip").innerHTML = G.tip("Smallest: the least total change. Fewest changes: touches as " +
+  "few values as possible. Safest: works for every model that fits the data about as well. " +
+  "The % is the model's chance after the change. Values you can't change are never touched.",
+  "right");
+
 // ---- what drove it: how much each value pushes this prediction, compared with an
 // average person, with the range across the good models
 
@@ -829,7 +895,7 @@ function renderPlan(scene) {
       <span><b>${G.esc(c.label)}</b> ${G.esc(c.before)} → <b>${G.esc(c.after)}</b>
       ${c.unit ? G.esc(c.unit) : ""}</span></label></li>`;
   }).join("") : `<li class="sub">${noSafe ? (recoKind === "safe"
-    ? "No safe change exists for the simple model. Switch to Quickest change to plan."
+    ? "No safe change exists for the simple model. Switch to Smallest change to plan."
     : "No realistic change flips the simple model.")
     : "Nothing to plan: already " + G.esc(scene.class_names[0]) + "."}</li>`;
   el("plan-list").dataset.items = JSON.stringify(items);
@@ -847,7 +913,7 @@ function planValues() {
     picked.push(c.label);
     if (!c.group) values[c.name] = c.integer ? Math.round(c.afterValue) : c.afterValue;
     else for (const r of lastScene.deltas.filter((x) => x.group_label === c.label))
-      values[r.name] = r[recoKind === "quick" ? "linear_quick" : "linear"].cf_real >= 0.5 ? 1 : 0;
+      values[r.name] = r[kindKey("linear", recoKind)].cf_real >= 0.5 ? 1 : 0;
   }
   return { values, picked };
 }
@@ -931,7 +997,7 @@ function groupRow(label, members) {
   };
   const youCat = active((x) => x.x0_real);
   const per = {};
-  for (const which of ["linear", "mlp", "linear_quick", "mlp_quick"]) {
+  for (const which of ["linear", "mlp", "linear_quick", "mlp_quick", "linear_sparse", "mlp_sparse"]) {
     const cat = active((x) => x[which].cf_real);
     per[which] = { cat, changed: cat !== youCat,
       mag: Math.max(...members.map((x) => Math.abs(x[which].delta_std))) };
@@ -945,8 +1011,8 @@ function groupRow(label, members) {
 
 function renderChanges(scene) {
   const rows = displayRows(scene).sort((a, b) => b.key - a.key);
-  // Columns follow the "Quickest / Safest" tab; "—" where no safe change exists.
-  const col = (which) => (recoKind === "quick" ? which + "_quick" : which);
+  // Columns follow the Smallest / Fewest / Safest tab; "—" where none exists.
+  const col = (which) => kindKey(which, recoKind);
   const none = (which) => !kindOk(scene, which, recoKind);
 
   const plainCell = (r, which) => {
@@ -988,8 +1054,8 @@ function renderChanges(scene) {
   el("changes-table").innerHTML =
     `<table class="chg"><thead><tr>` +
     `<th>Value</th><th>Now</th>` +
-    `<th>After, ${recoKind === "quick" ? "quickest" : "safest"} (simple)</th>` +
-    `<th>After, ${recoKind === "quick" ? "quickest" : "safest"} (flexible)</th>` +
+    `<th>After, ${KIND_NAME[recoKind].toLowerCase()} (simple)</th>` +
+    `<th>After, ${KIND_NAME[recoKind].toLowerCase()} (flexible)</th>` +
     `</tr></thead><tbody>${trs}</tbody></table>`;
 }
 
@@ -1155,6 +1221,11 @@ function updatePanel(scene) {
   renderWhatif(scene);
   el("compare-typical").href = `/compare.html?dataset=${encodeURIComponent(state.dataset)}` +
     `&you=${encodeYou(personValues(scene))}`;
+  const q = scene.query, who = `dataset=${encodeURIComponent(state.dataset)}&` +
+    (q.custom ? `you=${encodeYou(personValues(scene))}` : `query=${q.id}`);
+  el("details-link").href = `/details.html?${who}`;
+  el("map-link").href = `/app.html?${who}`;
+  renderWays(scene);
   renderChanges(scene);
 
   el("d-std-lin").textContent = scene.panels.linear.cfs.standard.distance.toFixed(3);
@@ -1172,17 +1243,17 @@ function updatePanel(scene) {
     `<table><tr><th>feature</th><th>value</th><th></th></tr>${rows}</table>`;
 
   el("metrics").textContent = metricsText(scene);
-  const q = scene.query;
   el("delta-caption").textContent =
     "Grey = can’t change · ✱ = " + (q.custom ? "left blank, typical value used" : "missing, typical value used");
 }
 
 function redrawPlots(scene) {
   const config = { responsive: true, displayModeBar: false };
-  for (const which of ["linear", "mlp"])
-    Plotly.react(plotDivs[which], buildPanelTraces(scene, which),
-                 panelLayout(scene, which), config);
-  Plotly.react(deltaDiv, deltaTraces(scene), deltaLayout(), config);
+  if (HAS_MAP)
+    for (const which of ["linear", "mlp"])
+      Plotly.react(plotDivs[which], buildPanelTraces(scene, which),
+                   panelLayout(scene, which), config);
+  if (HAS_DELTA) Plotly.react(deltaDiv, deltaTraces(scene), deltaLayout(), config);
 }
 
 async function refresh() {
@@ -1235,15 +1306,17 @@ async function drawScene() {
 
   const config = { responsive: true, displayModeBar: false };
   const draw = plotsReady ? Plotly.react : Plotly.newPlot;
-  for (const which of ["linear", "mlp"])
-    await draw(plotDivs[which], buildPanelTraces(scene, which),
-               panelLayout(scene, which), config);
-  await draw(deltaDiv, deltaTraces(scene), deltaLayout(), config);
+  if (HAS_MAP)
+    for (const which of ["linear", "mlp"])
+      await draw(plotDivs[which], buildPanelTraces(scene, which),
+                 panelLayout(scene, which), config);
+  if (HAS_DELTA) await draw(deltaDiv, deltaTraces(scene), deltaLayout(), config);
 
   if (!plotsReady) {
     plotsReady = true;
-    for (const div of Object.values(plotDivs))
-      wireClicks(div);
+    if (HAS_MAP)
+      for (const div of Object.values(plotDivs))
+        wireClicks(div);
   }
   updatePanel(scene);
 }
@@ -1622,6 +1695,7 @@ async function init() {
   await showAccount();
   const qs = new URLSearchParams(location.search);
   if (qs.has("dataset")) state.dataset = qs.get("dataset");
+  if (qs.has("query") && isFinite(Number(qs.get("query")))) state.query = Number(qs.get("query"));
   if (qs.has("you")) {
     state.custom = {};
     for (const kv of qs.get("you").split(",")) {
@@ -1675,8 +1749,9 @@ el("compare-tip").innerHTML = G.tip("Where each number sits among everyone in th
   "Most important first. A lock means it can’t be changed.", "right");
 el("reco-tip").innerHTML = G.tip("The smallest changes that flip the result for every " +
   "model that fits the data about as well. Things you can’t change are never suggested.");
-el("reco-kind-tip").innerHTML = G.tip("Quickest: the smallest change for this model. " +
-  "Safest: a change that works for every model that fits the data about as well.");
+el("reco-kind-tip").innerHTML = G.tip("Smallest: the least total change for this model. " +
+  "Fewest changes: touches as few values as possible. Safest: works for every model that " +
+  "fits the data about as well.");
 el("whatif-tip").innerHTML = G.tip("Drag a value. The chance updates and a hollow star " +
   "shows where you would move on the map.");
 el("plan-tip").innerHTML = G.tip("Tick the changes you’ll make. Save the plan to your " +
