@@ -16,6 +16,8 @@
         if (t !== "dark" && t !== "light")
           t = matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
         document.documentElement.setAttribute("data-theme", t);
+        var p = localStorage.getItem("glimpse-palette");
+        if (p) document.documentElement.setAttribute("data-palette", p);
       } catch (e) {}
     })();
   </script>
@@ -50,6 +52,30 @@
       <a id="go-enter" class="btn-primary" href="/app.html?enter=1">Enter my numbers</a>
       <a id="go-example" class="btn-secondary" href="/app.html">Try an example person</a>
     </div>
+
+    <section class="home-diff" aria-labelledby="diff-h">
+      <h2 id="diff-h" class="home-h">What's different <span id="diff-tip"></span></h2>
+      <div class="diff-grid">
+        <div class="diff-col">
+          <h3>Most “what would change it” tools</h3>
+          <ul>
+            <li>Trust one model's answer.</li>
+            <li>Suggest a change that flips that one model.</li>
+            <li>Show what mattered to that one model.</li>
+          </ul>
+        </div>
+        <div class="diff-col diff-us">
+          <h3>GLIMPSE</h3>
+          <ul>
+            <li>Checks every model that fits the data about as well.</li>
+            <li>Shows the range of answers, so a close call looks close.</li>
+            <li>Offers a safe change that works for every good model.</li>
+            <li>Shows when good models disagree about what mattered.</li>
+          </ul>
+        </div>
+      </div>
+      <p class="diff-more"><a href="/how.html#why">Why this matters</a></p>
+    </section>
 
     <p class="home-how"><a href="/how.html">How it works</a>
       <span class="sub">· reading the map, close calls, and the changes it suggests</span></p>

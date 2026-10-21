@@ -1,4 +1,4 @@
-"""Precompute the fitted models and ECLIPSE lenses used in production."""
+"""Precompute the fitted models and the site's map (lens) used in production."""
 import os
 import sys
 import pickle

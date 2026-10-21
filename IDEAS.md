@@ -18,6 +18,8 @@ Status: [x] done, [~] partly done, [ ] not started.
 
 1. Home
    - [x] One-line pitch, topic cards, "Enter my numbers", "Try an example person".
+   - [x] "What's different" (2026-10-20): other counterfactual tools trust one model; GLIMPSE
+         takes the Rashomon set (every good model) into account.
    - [x] Short "How it works" and a "Not medical or financial advice" line.
 2. Where you stand (the map page)
    - [x] Big prediction with a "Close call" / "Clear" badge.
@@ -40,6 +42,9 @@ Status: [x] done, [~] partly done, [ ] not started.
          true distance and direction, and the colours and lines are exact on that slice.
    - [ ] Pin two people and compare them side by side.
    - [ ] "Show people like me".
+   - [x] "What drove it" (2026-10-20): the values that pushed this prediction most, for either
+         model, with the range across the good models and a "models disagree" tag when good
+         models disagree on the direction.
 5. What would change it
    - [x] Top 3 changes per model as cards: before → after, unit, effort tag (easy / harder).
    - [x] Can't-change values as grey lock chips, no explanation text.
@@ -79,12 +84,21 @@ Status: [x] done, [~] partly done, [ ] not started.
       tool: every pair stays distinct under protanopia, deuteranopia and tritanopia, and text
       and map lines meet WCAG contrast in light and dark mode. The strictest model's line is
       also dashed, so it doesn't rely on colour.
+- [x] Colour choices under My account (2026-10-19): Blue & orange, Blue & red, Green & purple
+      (all colour-blind safe) and the original Classic green & pink (marked not safe).
+
+## Developer / research (wip)
+
+- [x] "[developer · wip]" box under the map: draw the map with ECLIPSE instead of PCA.
+- [x] "[wip] ECLIPSE comparison" page (/eclipse.html): live ECLIPSE vs PCA numbers per topic and
+      the same person on both maps.
 - [ ] Shareable links that never include personal values unless the user chooses.
 
 ## Things people can't change (added 2026-10-14)
 
-- [~] Never recommend changes to things people can't change. Today a fixed list per dataset
-      (age, pregnancies, family history, …) is held fixed in the search and shown with a lock.
+- [x] Never recommend changes to things people can't change. A fixed list per topic (family
+      history, …) is held fixed and shown with a lock; one-way values (age, pregnancies) are
+      "only up" by default (monotonic, 2026-10-20) and shown with ↑.
 - [x] Add an interface where each value can be marked:
       - can't change (immutable),
       - can only go up (monotonically increasing, e.g. age, number of pregnancies),

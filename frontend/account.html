@@ -16,6 +16,8 @@
         if (t !== "dark" && t !== "light")
           t = matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
         document.documentElement.setAttribute("data-theme", t);
+        var p = localStorage.getItem("glimpse-palette");
+        if (p) document.documentElement.setAttribute("data-palette", p);
       } catch (e) {}
     })();
   </script>
@@ -43,6 +45,12 @@
       <div class="acct-row"><span class="sub">Email</span><b id="acct-email"></b></div>
       <div class="acct-row"><span class="sub">Member since</span><span id="acct-since"></span></div>
       <p><button type="button" id="acct-signout">Sign out</button></p>
+    </section>
+
+    <section class="acct-card" aria-labelledby="colors-h">
+      <h2 id="colors-h">Colours</h2>
+      <div id="palette-picker" class="palette-grid" role="radiogroup" aria-labelledby="colors-h"></div>
+      <p class="sub">Used on every page. Saved in this browser.</p>
     </section>
 
     <section class="acct-card" aria-labelledby="saves-h">

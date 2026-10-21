@@ -30,6 +30,9 @@ _STATIC = {
     "/compare.html": ("compare.html", _HTML),
     "/how": ("how.html", _HTML),
     "/how.html": ("how.html", _HTML),
+    "/eclipse": ("eclipse.html", _HTML),
+    "/eclipse.html": ("eclipse.html", _HTML),
+    "/eclipse.js": ("eclipse.js", _JS),
     "/compare.js": ("compare.js", _JS),
     "/common.js": ("common.js", _JS),
     "/home.js": ("home.js", _JS),
@@ -215,8 +218,11 @@ def _people_route(body):
         if err:
             return 400, {"error": err}
         customs.append(clean)
+    lens = data.get("lens") or None
+    if lens is not None and lens not in gs.LENSES:
+        return 400, {"error": f"'lens' must be one of {', '.join(gs.LENSES)}"}
     try:
-        return 200, gs.people(ds, customs)
+        return 200, gs.people(ds, customs, lens=lens)
     except Exception as exc:
         return 500, {"error": str(exc)}
 
@@ -273,6 +279,15 @@ def route(method, path, query, body, headers=None):
     if method == "GET" and p.endswith("/datasets"):
         return 200, {"datasets": gs.DATASETS}
 
+    if method == "GET" and p.endswith("/lens-report"):
+        ds = q.get("dataset", ["pima"])[0]
+        if ds not in gs.VALID:
+            return 400, {"error": f"unknown dataset '{ds}'"}
+        try:
+            return 200, gs.lens_report(ds)
+        except Exception as exc:
+            return 500, {"error": str(exc)}
+
     if method == "GET" and p.endswith("/scene"):
         ds = q.get("dataset", ["pima"])[0]
         if ds not in gs.VALID:
@@ -283,9 +298,12 @@ def route(method, path, query, body, headers=None):
         view = q.get("view", ["everyone"])[0]
         if view not in gs.VIEWS:
             return 400, {"error": f"'view' must be one of {', '.join(gs.VIEWS)}"}
+        lens = q.get("lens", [None])[0]
+        if lens is not None and lens not in gs.LENSES:
+            return 400, {"error": f"'lens' must be one of {', '.join(gs.LENSES)}"}
         try:
             return 200, gs.scene(ds, query_id=q.get("query", [None])[0], constraints=rules,
-                                 view=view)
+                                 view=view, lens=lens)
         except Exception as exc:
             return 500, {"error": str(exc)}
 
@@ -303,6 +321,9 @@ def route(method, path, query, body, headers=None):
         view = data.get("view", "everyone")
         if view not in gs.VIEWS:
             return 400, {"error": f"'view' must be one of {', '.join(gs.VIEWS)}"}
+        lens = data.get("lens") or None
+        if lens is not None and lens not in gs.LENSES:
+            return 400, {"error": f"'lens' must be one of {', '.join(gs.LENSES)}"}
         if "point" in data:                       # an empty spot clicked on the map
             point = _map_point(data["point"])
             if point is None:
@@ -313,8 +334,8 @@ def route(method, path, query, body, headers=None):
                 if plane is None:
                     return 400, {"error": "'plane' must be {origin, axes}"}
             try:
-                values, outside = gs.decode(ds, point, plane=plane)
-                scene = gs.scene(ds, custom=values, constraints=rules, view=view)
+                values, outside = gs.decode(ds, point, plane=plane, lens=lens)
+                scene = gs.scene(ds, custom=values, constraints=rules, view=view, lens=lens)
             except ValueError as exc:
                 return 400, {"error": str(exc)}
             except Exception as exc:
@@ -326,7 +347,7 @@ def route(method, path, query, body, headers=None):
         if err:
             return 400, {"error": err}
         try:
-            return 200, gs.scene(ds, custom=clean, constraints=rules, view=view)
+            return 200, gs.scene(ds, custom=clean, constraints=rules, view=view, lens=lens)
         except Exception as exc:
             return 500, {"error": str(exc)}
 
@@ -368,7 +389,7 @@ class handler(BaseHTTPRequestHandler):
         if u.path in _STATIC:
             self._serve_static(u.path)
             return
-        if (p.endswith(("/datasets", "/scene", "/health")) or _is_auth(p)
+        if (p.endswith(("/datasets", "/scene", "/health", "/lens-report")) or _is_auth(p)
                 or "__route=" in u.query):
             self._reply(route("GET", u.path, u.query, None, self.headers))
             return

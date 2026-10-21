@@ -16,6 +16,8 @@
         if (t !== "dark" && t !== "light")
           t = matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
         document.documentElement.setAttribute("data-theme", t);
+        var p = localStorage.getItem("glimpse-palette");
+        if (p) document.documentElement.setAttribute("data-palette", p);
       } catch (e) {}
     })();
   </script>
@@ -53,6 +55,7 @@
       <a href="#why">Why “how sure”?</a>
       <a href="#read-map">Reading the map</a>
       <a href="#close-call">Close call</a>
+      <a href="#drove">What drove it</a>
       <a href="#quick-safe">Quickest and safest change</a>
       <a href="#can-change">What you can change</a>
       <a href="#flat-map">What the map can't show</a>
@@ -65,6 +68,10 @@
       <p>Many different models fit the same data about equally well. They can still give
         one person different answers.</p>
       <p>GLIMPSE shows the whole range of those answers, so a close call looks like a close call.</p>
+      <p>Researchers call this group of equally good models the <b>Rashomon set</b>. Most tools
+        that suggest changes (“counterfactual explanations”) look at one model from it. GLIMPSE
+        takes the whole set into account: the range bars, the safe change, and “what drove it”
+        all cover every good model.</p>
     </section>
 
     <section id="read-map" class="how-sec">
@@ -72,7 +79,8 @@
       <p>The map squeezes everyone onto a flat page. People with similar numbers sit close together.</p>
       <dl class="how-terms">
         <dt>Background colour</dt>
-        <dd>The simple model's chance at each spot: one colour for each answer, pale near 50%.</dd>
+        <dd>The simple model's chance at each spot: one colour for each answer, pale near 50%.
+          Other colour sets are under My account.</dd>
         <dt id="density">Shading</dt>
         <dd>Where people are. The darkest band holds the most crowded 20% of people. Each lighter
           band adds 20% more, and the outer line holds 80%. No single person is shown.</dd>
@@ -100,6 +108,14 @@
       <p>The range bar shows it: the dot is the best guess, the band is what the other good models say.</p>
     </section>
 
+    <section id="drove" class="how-sec">
+      <h2>What drove it</h2>
+      <p>Each bar shows how much one of your values pushes the model toward one answer,
+        compared with an average person. The biggest pushes are listed first.</p>
+      <p>The thin line shows what the other good models say. When it crosses the middle, good
+        models disagree on which way that value pushes.</p>
+    </section>
+
     <section id="quick-safe" class="how-sec">
       <h2>Quickest and safest change</h2>
       <p><b>Quickest change</b>: the smallest change that flips the main model's answer.</p>
@@ -114,8 +130,9 @@
       <h2>What you can change</h2>
       <p>Under “What can you change?” on the map page, mark each value:</p>
       <ul>
-        <li><b>Can't change</b> (lock), like age or family history.</li>
-        <li><b>Only up</b> or <b>only down</b>.</li>
+        <li><b>Can't change</b> (lock), like family history.</li>
+        <li><b>Only up</b> (↑) or <b>only down</b> (↓). Age and number of pregnancies are
+          “only up” to start with.</li>
         <li><b>Free</b> to change.</li>
       </ul>
       <p>Suggestions follow these choices. They are saved in this browser.</p>

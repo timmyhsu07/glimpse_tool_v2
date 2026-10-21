@@ -113,5 +113,47 @@ class AroundViewTests(unittest.TestCase):
             self.assertEqual(code, 400, plane)
 
 
+class EclipseLensTests(unittest.TestCase):
+    """Developer option: the shared map drawn with ECLIPSE instead of PCA."""
+
+    @classmethod
+    def setUpClass(cls):
+        code, cls.scene = index.route("GET", "/api/scene", "dataset=pima&lens=eclipse", None)
+        assert code == 200
+
+    def test_eclipse_on_request_pca_by_default(self):
+        self.assertEqual(self.scene["lens"]["key"], "eclipse")
+        _, plain = index.route("GET", "/api/scene", "dataset=pima", None)
+        self.assertEqual(plain["lens"]["key"], "pca")
+
+    def test_click_lands_exactly_on_the_eclipse_map(self):
+        b = self.scene["bounds"]
+        point = [b["x"][0] + 0.3 * (b["x"][1] - b["x"][0]), b["y"][0] + 0.7 * (b["y"][1] - b["y"][0])]
+        code, s2 = post_scene({"dataset": "pima", "point": point, "lens": "eclipse"})
+        self.assertEqual(code, 200)
+        self.assertEqual(s2["lens"]["key"], "eclipse")
+        q = s2["query"]
+        self.assertLess(math.hypot(q["x"] - point[0], q["y"] - point[1]),
+                        (b["x"][1] - b["x"][0]) / 6000)
+
+    def test_rejects_unknown_maps(self):
+        self.assertEqual(index.route("GET", "/api/scene", "dataset=pima&lens=umap", None)[0], 400)
+        self.assertEqual(post_scene({"dataset": "pima", "custom": {}, "lens": "umap"})[0], 400)
+        code, *_ = index.route("POST", "/api/people", "",
+                               json.dumps({"dataset": "pima", "people": [{}], "lens": "umap"}))
+        self.assertEqual(code, 400)
+
+    def test_comparison_report(self):
+        code, r = index.route("GET", "/api/lens-report", "dataset=pima", None)
+        self.assertEqual(code, 200)
+        self.assertEqual(set(r["lenses"]), {"pca", "eclipse"})
+        for vals in r["lenses"].values():
+            for k in ("shows_model", "score_read", "change_shown", "map_right", "trust", "kept"):
+                self.assertTrue(0 <= vals[k] <= 1, (k, vals[k]))
+        # ECLIPSE is built to show the model; PCA ignores it
+        self.assertGreater(r["lenses"]["eclipse"]["shows_model"], r["lenses"]["pca"]["shows_model"])
+        self.assertEqual(index.route("GET", "/api/lens-report", "dataset=nope", None)[0], 400)
+
+
 if __name__ == "__main__":
     unittest.main()

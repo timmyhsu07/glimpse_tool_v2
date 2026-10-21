@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="google-site-verification" content="mQlGSmTbCYFctZavIyGIMyBsTILOaBCQHSwizkSydew">
+  <meta name="description" content="Work in progress: how GLIMPSE's experimental ECLIPSE map compares with PCA.">
+  <title>[wip] ECLIPSE comparison — GLIMPSE</title>
+  <script>
+    // Apply the saved theme before the page renders.
+    (function () {
+      try {
+        var q = new URLSearchParams(location.search).get("theme");
+        var t = (q === "dark" || q === "light") ? q
+              : localStorage.getItem("glimpse-theme");
+        if (t !== "dark" && t !== "light")
+          t = matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+        document.documentElement.setAttribute("data-theme", t);
+        var p = localStorage.getItem("glimpse-palette");
+        if (p) document.documentElement.setAttribute("data-palette", p);
+      } catch (e) {}
+    })();
+  </script>
+  <link rel="stylesheet" href="/style.css">
+  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js" charset="utf-8"></script>
+</head>
+<body data-page="eclipse">
+  <header id="titlebar">
+    <a class="brand" href="/">GLIMPSE</a>
+    <nav id="nav" aria-label="Main">
+      <a href="/" data-page="home">Home</a>
+      <a href="/app.html" data-page="app">Map</a>
+      <a href="/compare.html" data-page="compare">Compare</a>
+      <a href="/how.html" data-page="how">How it works</a>
+      <a href="/login.html" data-page="account" id="account-link">Sign in</a>
+    </nav>
+    <button id="theme-toggle" class="theme-btn" type="button"
+            aria-label="Toggle light and dark mode"></button>
+  </header>
+
+  <main id="eclipse-page" class="wip-page">
+    <div class="wip-tag">[wip · ECLIPSE comparison]</div>
+    <h1>ECLIPSE vs PCA</h1>
+    <p class="lead">The site's map uses <b>PCA</b>: the two directions where people differ most.
+      <b>ECLIPSE</b> is our experimental map. It tilts those directions toward what the model
+      looks at and where good models disagree. Both are flat, straight-line maps that can be
+      exactly reversed.</p>
+
+    <div id="controls">
+      <label>Topic <select id="dataset"></select></label>
+      <span id="busy" class="sub" role="status"></span>
+    </div>
+
+    <p id="summary" class="ec-summary" aria-live="polite"></p>
+
+    <table id="ec-table" class="ec-table">
+      <thead><tr><th>Measure</th><th>PCA</th><th>ECLIPSE</th><th>Better</th></tr></thead>
+      <tbody></tbody>
+    </table>
+    <p class="sub">Higher is better on every row. The simple model, with the good models that fit
+      the data about as well (within 3%).</p>
+
+    <h2>The same person on both maps</h2>
+    <p class="sub" id="maps-who"></p>
+    <div class="ec-maps">
+      <figure><figcaption>PCA <span class="sub" id="cap-pca"></span></figcaption>
+        <div id="map-pca" class="ec-map"></div></figure>
+      <figure><figcaption>ECLIPSE <span class="sub" id="cap-eclipse"></span></figcaption>
+        <div id="map-eclipse" class="ec-map"></div></figure>
+    </div>
+    <p class="sub">★ person · ✕ quick change · ▪ safe change · solid line: model's line ·
+      dashed: strictest good model. Grey dots are people.</p>
+
+    <details class="ec-how">
+      <summary>How the numbers are made</summary>
+      <ul>
+        <li><b>Shows what the model looks at</b>: how much of the simple model's direction lies
+          flat on the map.</li>
+        <li><b>Left to right follows the score</b> and <b>keeps where good models disagree</b>:
+          rank correlation between each person's value and the value of the person the map
+          shows at their spot.</li>
+        <li><b>Share of a suggested change you can see</b> and <b>change drawn past the right
+          line</b>: for 40 people the model flags (the same 40 for both maps), using the
+          topic's usual "can't change" values. Quick changes should land past the model's
+          line, safe changes past the strictest model's line.</li>
+        <li><b>Keeps who is near whom</b>: trustworthiness with 10 neighbours, on held-out
+          people.</li>
+        <li><b>Keeps how spread out people are</b>: share of the data's variance on the map.</li>
+      </ul>
+      <p>Computed live by <code>lens_report</code> in <code>backend/engine/cf_core.py</code>.</p>
+    </details>
+
+    <p class="sub">Try ECLIPSE on the real map: open the <a href="/app.html">Map</a> and tick
+      “Draw the map with ECLIPSE” in the developer box under it.</p>
+  </main>
+
+  <script src="/common.js"></script>
+  <script src="/eclipse.js"></script>
+</body>
+</html>

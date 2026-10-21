@@ -8,7 +8,7 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from data import LOADERS, DATASET_CHOICES, evaluate
 from counterfactuals import train_logreg, RashomonEllipsoid, _sigmoid
-from lenses import fit_eclipse, fit_pca
+from lenses import disagreement, fit_eclipse, fit_pca
 from mlp_backend import MLPBackend
 
 N_SCATTER = 600
@@ -23,11 +23,18 @@ MARGIN = 0.10
 
 # Features held fixed during the counterfactual search.
 IMMUTABLE = {
-    "pima": {"Pregnancies", "Age", "DiabetesPedigreeFunction"},
+    "pima": {"DiabetesPedigreeFunction"},
     "heloc": {"MSinceOldestTradeOpen", "AverageMInFile",
               "ExternalRiskEstimate"},
     "cancer": set(),
-    "taiwan": {"x2", "x3", "x4", "x5"},          # sex, education, marriage, age
+    "taiwan": {"x2", "x3", "x4"},                # sex, education, marriage
+}
+
+# Values that can only move one way (monotonic): the default "only up" / "only down"
+# rules. A suggestion never moves them the other way.
+MONOTONE = {
+    "pima": {"Pregnancies": "up", "Age": "up"},
+    "taiwan": {"x5": "up"},                      # age
 }
 
 _MODELS = {}
@@ -73,25 +80,43 @@ def _models(dataset_key, eps):
 
 
 # Which map the site draws: "pca" or "eclipse". Switched to PCA on 2026-10-14.
+# ECLIPSE stays available as the developer option (``lens="eclipse"``); both fit in
+# well under a second, so neither needs to be precomputed.
 MAP_LENS = "pca"
 _LENS_FIT = {"pca": fit_pca, "eclipse": fit_eclipse}
+LENSES = tuple(_LENS_FIT)
 
 
-def _lens(dataset_key, eps):
-    key = (dataset_key, round(float(eps), 6))
+def _lens(dataset_key, eps, kind=None):
+    kind = kind or MAP_LENS
+    key = (dataset_key, round(float(eps), 6), kind)
     if key not in _LENSES:
         m = _models(dataset_key, eps)
-        _LENSES[key] = _LENS_FIT[MAP_LENS](m["data"], m["lin"], m["lin_ell"])
+        _LENSES[key] = _LENS_FIT[kind](m["data"], m["lin"], m["lin_ell"])
     return _LENSES[key]
 
 
-def _setup(dataset_key, eps):
-    key = (dataset_key, round(float(eps), 6))
+def _actions(dataset_key, m):
+    """The topic's default rules from IMMUTABLE and MONOTONE. Read here rather than
+    from a saved fit, so changing them needs no refit."""
+    names = [str(n) for n in m["data"].feature_names]
+    immutable = IMMUTABLE.get(dataset_key, set()) & set(names)
+    monotone = {n: r for n, r in MONOTONE.get(dataset_key, {}).items()
+                if n in names and n not in immutable}
+    features = [dict(f, immutable=f["name"] in immutable, monotone=monotone.get(f["name"]))
+                for f in m["features"]]
+    return dict(immutable=immutable, monotone=monotone, features=features,
+                fixed=np.array([n in immutable for n in names], dtype=bool))
+
+
+def _setup(dataset_key, eps, kind=None):
+    kind = kind or MAP_LENS
+    key = (dataset_key, round(float(eps), 6), kind)
     if key in _VIEWS:
         return _VIEWS[key]
 
     m = _models(dataset_key, eps)
-    lens = _lens(dataset_key, eps)
+    lens = _lens(dataset_key, eps, kind)
     data, lin, lin_ell, mlp = m["data"], m["lin"], m["lin_ell"], m["mlp"]
 
     emb = lens.embed(data.X)
@@ -160,6 +185,7 @@ def _setup(dataset_key, eps):
         # counts, no percentages over 100).
         limits=(data.X.min(axis=0), data.X.max(axis=0)),
     )
+    setup.update(_actions(dataset_key, m))
     _VIEWS[key] = setup
     return setup
 
@@ -345,7 +371,7 @@ def _custom_x0(setup, custom):
     return x0, provided
 
 
-def decode_point(dataset_key, point, eps=0.03, plane=None):
+def decode_point(dataset_key, point, eps=0.03, plane=None, lens=None):
     """The person the map places at a 2-D position, in real units.
 
     The map is linear with orthonormal axes, so this is its exact inverse and the
@@ -355,7 +381,7 @@ def decode_point(dataset_key, point, eps=0.03, plane=None):
     come back fractional. Also returns the features that fall outside the
     observed data.
     """
-    setup = _setup(dataset_key, float(np.clip(eps, 0.005, 0.2)))
+    setup = _setup(dataset_key, float(np.clip(eps, 0.005, 0.2)), lens)
     data = setup["data"]
     if plane is None:
         x_std = setup["lens"].invert(np.asarray(point, float).reshape(1, 2))[0]
@@ -384,12 +410,14 @@ RULES = ("fixed", "up", "down", "free")
 def _rules(setup, x0, constraints=None):
     """Per-value rules -> (fixed mask, limits, {name: rule}).
 
-    Defaults: the topic's locked values are "fixed", the rest "free". ``constraints``
+    Defaults: the topic's locked values are "fixed", its one-way values "up" or
+    "down" (MONOTONE), the rest "free". ``constraints``
     ({name: rule}) overrides them; "up" can't go below the person's value, "down"
     can't go above it. Everything still stays within what the data has seen.
     """
     names = [str(n) for n in setup["data"].feature_names]
-    rule = {n: ("fixed" if n in setup["immutable"] else "free") for n in names}
+    one_way = setup.get("monotone", {})
+    rule = {n: ("fixed" if n in setup["immutable"] else one_way.get(n, "free")) for n in names}
     for n, r in (constraints or {}).items():
         if n in rule and r in RULES:
             rule[n] = r
@@ -529,12 +557,12 @@ def _feature_deltas(setup, x0, panels, rule=None):
     return out
 
 
-def people(dataset_key, customs, eps=0.03):
+def people(dataset_key, customs, eps=0.03, lens=None):
     """Predictions and map positions for several entered people, without a map.
 
     Each chance range is computed exactly as the verdict card's.
     """
-    setup = _setup(dataset_key, float(np.clip(eps, 0.005, 0.2)))
+    setup = _setup(dataset_key, float(np.clip(eps, 0.005, 0.2)), lens)
     data, lens = setup["data"], setup["lens"]
     lin, ell, mlp = setup["lin"], setup["lin_ell"], setup["mlp"]
     names = [str(n) for n in data.feature_names]
@@ -559,14 +587,124 @@ def people(dataset_key, customs, eps=0.03):
             "importance": setup["scatter_info"]["importance"], "people": out}
 
 
+IG_STEPS = 64
+
+
+def _drivers(setup, x0):
+    """How much each value pushes this person's score, compared with an average person
+    (standardized values are 0 there), for each model, with the range across the good
+    models.
+
+    Simple model: value j adds w_j * x_j. Flexible model: integrated gradients along the
+    straight line from the average person, which add up to the same score difference.
+    Both are linear in the (last-layer) weights theta, so over the Rashomon ellipsoid
+    theta = theta_hat + Q^-1/2 u, |u| <= 1, each push g . theta ranges exactly over
+    g . theta_hat +- |Q^-1/2 g|. A range that crosses 0 means the good models disagree
+    on which way that value pushes.
+    """
+    lin, ell, mlp = setup["lin"], setup["lin_ell"], setup["mlp"]
+    d = len(x0)
+    G_lin = np.zeros((d, d + 1))
+    G_lin[np.arange(d), np.arange(d)] = x0                       # push_j = theta_j * x_j
+    t = (np.arange(IG_STEPS) + 0.5) / IG_STEPS
+    slope = 1.0 - np.tanh(t[:, None] * (x0 @ mlp.W1) + mlp.b1) ** 2
+    G_mlp = np.zeros((d, len(mlp.theta)))
+    G_mlp[:, :-1] = x0[:, None] * mlp.W1 * slope.mean(axis=0)[None, :]
+    names = [str(n) for n in setup["data"].feature_names]
+    labels = {f["name"]: f["label"] for f in setup["features"]}
+    out = {}
+    for key, G, theta, e in (("linear", G_lin, lin.theta, ell), ("mlp", G_mlp, mlp.theta, mlp.ell)):
+        push = G @ theta
+        half = np.linalg.norm(G @ e.Q_inv_sqrt, axis=1)
+        rows = [{"name": n, "label": labels.get(n, n), "push": round(float(c), 4),
+                 "lo": round(float(c - h), 4), "hi": round(float(c + h), 4)}
+                for n, c, h in zip(names, push, half)]
+        rows.sort(key=lambda r: -abs(r["push"]))
+        base = float(lin.logit(np.zeros((1, d)))[0] if key == "linear" else mlp.logit(np.zeros((1, d)))[0])
+        out[key] = {"base": round(base, 4), "rows": rows}
+    return out
+
+
+REPORT_PEOPLE = 40
+_REPORTS = {}
+
+
+def _spearman(a, b):
+    ra, rb = np.argsort(np.argsort(a)), np.argsort(np.argsort(b))
+    return float(np.corrcoef(ra, rb)[0, 1])
+
+
+def lens_report(dataset_key, eps=0.03):
+    """How each map (PCA, ECLIPSE) shows the simple model, for the comparison page.
+
+    score_read / disagree_read: rank correlation between each person's score (or how
+    much the good models disagree about them) and that of the person the map shows at
+    their spot. shows_model: share of the model's direction the map keeps. For a fixed
+    sample of people the model flags, with the topic's default rules: how much of each
+    suggested change lands on the map (median), and how often the map draws the change
+    on the correct side of its line (quick past the model's line, safe past the
+    strictest model's line).
+    """
+    eps = float(np.clip(eps, 0.005, 0.2))
+    key = (dataset_key, round(eps, 6))
+    if key in _REPORTS:
+        return _REPORTS[key]
+    m = _models(dataset_key, eps)
+    data, lin, ell = m["data"], m["lin"], m["lin_ell"]
+    X = np.asarray(data.X, float)
+    bad = np.where(lin.logit(X) > 0)[0]
+    sample = np.random.default_rng(0).choice(bad, min(REPORT_PEOPLE, len(bad)), replace=False)
+    changes = []
+    for i in sample:
+        x0 = X[i]
+        fixed, limits, _ = _rules({**_actions(dataset_key, m), "data": data,
+                                   "limits": (X.min(axis=0), X.max(axis=0))}, x0)
+        q = ell.standard_cf(x0, TARGET_CLASS, margin=MARGIN, fixed=fixed, limits=limits)
+        r = ell.robust_cf(x0, TARGET_CLASS, margin=MARGIN, fixed=fixed, limits=limits)
+        changes.append((x0, q, r, ell.worst_model(r, TARGET_CLASS),
+                        -float(lin.logit(q)[0]) >= MARGIN - 1e-3,
+                        float(ell.robust_logit(r[None, :], TARGET_CLASS)[0]) >= MARGIN - 1e-3))
+
+    cov = np.cov(X.T)
+    out = {}
+    for kind in LENSES:
+        lens = _lens(dataset_key, eps, kind)
+        A, mean = lens.comp, lens.mean
+        spot = lambda Z: (np.atleast_2d(Z) - mean) @ A.T @ A + mean
+        share = lambda v: float(np.linalg.norm(A @ v) / max(np.linalg.norm(v), 1e-12))
+        shown, right = [], []
+        for x0, q, r, th_w, q_ok, r_ok in changes:
+            if q_ok:
+                shown.append(share(q - x0))
+                right.append(float(lin.logit(spot(q))[0]) < 0)
+            if r_ok:
+                shown.append(share(r - x0))
+                right.append(float(np.append(spot(r)[0], 1.0) @ th_w) < 0)
+        Xs = spot(X)
+        out[kind] = {
+            "label": lens.label, "extra": lens.extra,
+            "trust": lens.quality["trust"],
+            "kept": round(float(np.trace(A @ cov @ A.T) / np.trace(cov)), 3),
+            "shows_model": round(share(lin.w), 3),
+            "score_read": round(_spearman(lin.logit(X), lin.logit(Xs)), 3),
+            "disagree_read": round(_spearman(disagreement(ell, X), disagreement(ell, Xs)), 3),
+            "change_shown": round(float(np.median(shown)), 3) if shown else None,
+            "map_right": round(float(np.mean(right)), 3) if right else None,
+            "n_changes": len(right),
+        }
+    _REPORTS[key] = {"dataset": data.name, "key": dataset_key, "eps": eps,
+                     "people": int(len(sample)), "lenses": out}
+    return _REPORTS[key]
+
+
 def get_scene(dataset_key, eps=0.03, query_id=None, custom=None, constraints=None,
-              view="everyone"):
+              view="everyone", lens=None):
     """Return the JSON scene for a dataset row or entered values.
 
     ``view`` "around" rebuilds each model's map around the person (see _around).
     """
     eps = float(np.clip(eps, 0.005, 0.2))
-    setup = _setup(dataset_key, eps)
+    setup = _setup(dataset_key, eps, lens)
     data, emb, lens = setup["data"], setup["emb"], setup["lens"]
 
     if custom is not None:
@@ -600,6 +738,7 @@ def get_scene(dataset_key, eps=0.03, query_id=None, custom=None, constraints=Non
                           else bool(data.missing_mask[query["id"], j]))
     for p in panels.values():
         del p["_cf_rob_full"], p["_cf_std_full"], p["_theta_w"]
+    drivers = _drivers(setup, x0)
 
     idx, si = setup["scatter_idx"], setup["scatter_info"]
     pts_payload = [{"id": int(i), "x": float(emb[i, 0]), "y": float(emb[i, 1]),
@@ -636,6 +775,7 @@ def get_scene(dataset_key, eps=0.03, query_id=None, custom=None, constraints=Non
         "query": query,
         "panels": panels,
         "deltas": deltas,
+        "drivers": drivers,
         "features": setup["features"],
     }
 

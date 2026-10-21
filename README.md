@@ -34,7 +34,8 @@ frontend/            the site: served as-is, no build step
   account.html account.js   my account: save cards, timeline, change password, delete account
   compare.html compare.js   compare two people: you, a save, or a typical person
   how.html             how it works: reading the map, close calls, the changes it suggests
-  common.js            shared: theme, navigation, topic names, "?" tips
+  eclipse.html eclipse.js   [wip] ECLIPSE vs PCA: live numbers and one person on both maps
+  common.js            shared: theme, colour sets, navigation, topic names, "?" tips
   style.css            shared by every page
 backend/
   server.py            local server: API + frontend on one port
@@ -54,8 +55,9 @@ api/index.py         Vercel entry point; loads backend/api/index.py
 | Method | Path | |
 |---|---|---|
 | GET | `/api/datasets` | dataset list |
-| GET | `/api/scene?dataset=&query=&view=` | scene for a person in the data; `view=around` rebuilds each map around them |
-| POST | `/api/scene` | `{dataset, custom}` entered values, or `{dataset, point: [x, y]}` a map spot (add `plane` from a panel to decode a click on an "around" map); both take `view` |
+| GET | `/api/scene?dataset=&query=&view=&lens=` | scene for a person in the data; `view=around` rebuilds each map around them; `lens=eclipse` draws the shared map with ECLIPSE (developer option) |
+| POST | `/api/scene` | `{dataset, custom}` entered values, or `{dataset, point: [x, y]}` a map spot (add `plane` from a panel to decode a click on an "around" map); both take `view` and `lens` |
+| GET | `/api/lens-report?dataset=` | ECLIPSE vs PCA numbers for the comparison page |
 | GET | `/api/me` | the signed-in user, or `null` |
 | POST | `/api/register`, `/api/login`, `/api/logout` | accounts (no email verification) |
 | POST | `/api/people` | `{dataset, people: [{feature: value}, ...]}` predictions and map spots, no map (max 60) |
@@ -84,11 +86,31 @@ background and lines are the models' exact answers on that slice; other people a
 how they differ from the person along it. A click on that map is decoded through the panel's
 `plane` ({origin, axes}, standardized), and lands exactly where clicked.
 
+**ECLIPSE (developer option).** The map page has a "[developer · wip]" box that redraws the
+shared map with ECLIPSE (`lens=eclipse`); both maps fit in under a second, so nothing extra is
+precomputed. `/eclipse.html` compares the two live (`lens_report` in `cf_core.py`).
+
+**Colours.** My account offers four colour sets (`PALETTES` in `frontend/common.js`, text and
+box colours under `[data-palette]` in `style.css`). Blue & orange (default), Blue & red and Green
+& purple stay distinct under protanopia, deuteranopia and tritanopia and meet WCAG contrast in
+both themes; Classic green & pink is the original and is labelled not colour-blind safe.
+
+## What drove it
+
+Each scene has `drivers`: for each model, how much each value pushes this person's score
+compared with an average person (`_drivers` in `cf_core.py`). Simple model: `w_j * x_j`.
+Flexible model: integrated gradients from the average person (64 steps). Both add up to the
+score difference, and both are linear in the model's (last-layer) weights, so the range across
+the good models (the Rashomon ellipsoid) is exact: `push ± |Q^-1/2 g|`. A range that crosses 0
+is shown as "models disagree".
+
 ## How suggested changes work
 
 - Every value has a rule: can't change, only up, only down, or free. The defaults lock each
-  topic's `IMMUTABLE` values; people change any rule in "What can you change?" on the map page,
-  and requests send them as `rules` (`{name: "fixed" | "up" | "down" | "free"}`).
+  topic's `IMMUTABLE` values and make its `MONOTONE` values one-way (Diabetes: age and
+  pregnancies only go up); people change any rule in "What can you change?" on the map page,
+  and requests send them as `rules` (`{name: "fixed" | "up" | "down" | "free"}`). Both lists
+  are read at request time, so changing them needs no refit.
 - Values in the locked list per topic (`IMMUTABLE` in `backend/engine/cf_core.py`) never change
   unless the person unlocks them.
 - Every other value stays within the lowest and highest seen in the data (widened to include

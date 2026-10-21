@@ -1,33 +1,8 @@
 
 
-// Colour-blind-safe palette: blue for the good side, orange for the bad side, never
-// red against green. Every pair that must be told apart stays distinct under
-// protanopia, deuteranopia and tritanopia, and lines and text meet WCAG contrast,
-// in both themes. Shapes and dashes carry meaning too (★ ✕ ▪, dashed strictest line).
-const PALETTE = {
-  light: {
-    good: "#0072b2", bad: "#d55e00",                       // dots on the old map
-    line: "#14213d", worst: "#b34700", fan: "#555555",
-    you: "#f0e442", quick: "#111111", safe: "#7a3300", outline: "#111111",
-    whatif: "#111111", arrow: "#111111",
-    deltaLin: "#0072b2", deltaMlp: "#009e73", immutable: "#d0d0d0",
-    density: "27,27,43", fieldOpacity: 0.45,
-    field: [[0, "#5aa0dc"], [0.25, "#a8cdee"], [0.5, "#f5f5f5"], [0.75, "#f8c590"], [1, "#f39a3d"]],
-  },
-  dark: {
-    good: "#56b4e9", bad: "#e69f00",
-    line: "#f2f2f5", worst: "#ffb070", fan: "#bbbbbb",
-    you: "#f0e442", quick: "#f2f2f2", safe: "#d55e00", outline: "#111111",
-    whatif: "#f2f2f5", arrow: "#f2f2f5",
-    deltaLin: "#56b4e9", deltaMlp: "#009e73", immutable: "#5a5f68",
-    density: "242,242,248", fieldOpacity: 0.5,
-    field: [[0, "#3d8fd6"], [0.25, "#2f5f8f"], [0.5, "#2a2e36"], [0.75, "#8a5a2b"], [1, "#e8892b"]],
-  },
-};
-
 const G = window.GLIMPSE;
 const state = { dataset: "pima", query: null, custom: null, point: null, plane: null,
-                rules: {}, view: "everyone" };
+                rules: {}, view: "everyone", lens: null };
 const RULES_KEY = "glimpse-rules:";
 
 const el = (id) => document.getElementById(id);
@@ -44,6 +19,7 @@ const PENDING_KEY = "glimpse-pending-save";
 const VIEW_KEY = "glimpse-map-view";
 const GRAPH_KEY = "glimpse-old-graph";
 const AROUND_KEY = "glimpse-map-around";
+const LENS_KEY = "glimpse-dev-lens";          // developer option: "eclipse" or unset (PCA)
 let sceneSeq = 0;
 const DISPUTED_SHARE = 0.15;      // "most disputed" = this share with the widest ranges
 let mapView = "both";
@@ -67,7 +43,7 @@ const ordinal = (n) => {
 };
 
 const isDark = () => G.isDark();
-const pal = () => PALETTE[isDark() ? "dark" : "light"];
+const pal = () => G.mapColors();
 
 function themeColors() {
   return isDark()
@@ -295,7 +271,7 @@ function densityTrace(scene, which) {
 // current view: the star lands under the pointer and the map does not shift.
 function viewRanges(div, scene, which) {
   // An "around" map is rebuilt for each person, so it is always framed afresh.
-  const fl = div._fullLayout, key = `${scene.dataset}:${scene.view}`;
+  const fl = div._fullLayout, key = `${scene.dataset}:${scene.view}:${scene.lens.key}`;
   if (scene.view !== "around" && scene.query.from_map && fl && fl.xaxis &&
       div.dataset.view === key)
     return [fl.xaxis.range.slice(), fl.yaxis.range.slice()];
@@ -343,7 +319,7 @@ function panelLayout(scene, which) {
     hoverdistance: DOT_PX,
     // keep the user's zoom while clicking around the same dataset; an "around" map
     // is new for each person
-    uirevision: around ? `around:${scene._rev}` : scene.dataset,
+    uirevision: around ? `around:${scene._rev}` : `${scene.dataset}:${scene.lens.key}`,
     annotations: arrowTarget(scene, which) ? [{
       x: arrowTarget(scene, which).x, y: arrowTarget(scene, which).y, ax: q.x, ay: q.y,
       xref: "x", yref: "y", axref: "x", ayref: "y",
@@ -487,7 +463,8 @@ function renderCompare(scene) {
     const unit = r.unit ? " " + G.esc(r.unit) : "";
     return `<li class="cmp${r.immutable ? " cmp-fixed" : ""}">
       <div class="cmp-top"><span class="cmp-name">${G.esc(r.label)}` +
-      `${r.immutable ? " " + G.LOCK : ""}${r.missing ? ' <span class="miss-mark" title="typical value used">✱</span>' : ""}</span>
+      `${r.immutable ? " " + G.LOCK : ""}${ONE_WAY[r.rule] || ""}` +
+      `${r.missing ? ' <span class="miss-mark" title="typical value used">✱</span>' : ""}</span>
         <span class="cmp-val">${fmtVal(r.x0_real, r.integer)}${unit}</span></div>
       <div class="cmp-bar" role="img" aria-label="${G.esc(r.label)}: ${where} of people">
         <i style="left:${Math.min(98, Math.max(0, pctl))}%"></i></div>
@@ -579,10 +556,70 @@ function setRecoKind(kind) {
     renderChanges(lastScene);
   }
 }
+// ---- what drove it: how much each value pushes this prediction, compared with an
+// average person, with the range across the good models
+
+const DRIVERS_SHOWN = 5;
+let driversModel = "linear", driversAll = false;
+
+function renderDrivers(scene) {
+  const d = scene.drivers && scene.drivers[driversModel];
+  if (!d) return;
+  const [goodName, badName] = scene.class_names;
+  const byName = new Map(scene.deltas.map((r) => [r.name, r]));
+  const rows = d.rows.filter((r) => Math.abs(r.push) > 0.005 || r.hi - r.lo > 0.01);
+  const shown = driversAll ? rows : rows.slice(0, DRIVERS_SHOWN);
+  const scale = Math.max(1e-6, ...shown.map((r) => Math.max(Math.abs(r.lo), Math.abs(r.hi))));
+  const at = (v) => 50 + 50 * v / scale;            // % across the bar; 50 = no push
+  el("drivers-list").innerHTML = shown.map((r) => {
+    const v = byName.get(r.name) || {};
+    const toBad = r.push > 0, split = r.lo < 0 && r.hi > 0;
+    const side = toBad ? `▲ toward ${G.esc(badName)}` : `▼ toward ${G.esc(goodName)}`;
+    const mark = v.rule === "fixed" ? " " + G.LOCK : ONE_WAY[v.rule] || "";
+    const label = `${r.label}: pushes toward ${toBad ? badName : goodName}` +
+      (split ? "; good models disagree on the direction" : "");
+    return `<li class="drv">
+      <div class="drv-top"><span class="drv-name">${G.esc(r.label)}${mark}</span>
+        <span class="drv-val">${v.x0_real == null ? "" : fmtVal(v.x0_real, v.integer)}` +
+        `${v.unit ? " " + G.esc(v.unit) : ""}</span></div>
+      <div class="drv-track" role="img" aria-label="${G.esc(label)}"
+           title="score ${r.push > 0 ? "+" : ""}${r.push.toFixed(2)} (good models: ${r.lo.toFixed(2)} to ${r.hi.toFixed(2)})">
+        <span class="drv-mid"></span>
+        <span class="drv-bar ${toBad ? "bad" : "good"}"
+              style="left:${Math.min(at(0), at(r.push))}%;width:${Math.max(Math.abs(at(r.push) - 50), 0.6)}%"></span>
+        <span class="drv-range" style="left:${at(r.lo)}%;width:${at(r.hi) - at(r.lo)}%"></span>
+      </div>
+      <div class="drv-note sub">${side}` +
+        `${split ? ' <span class="drv-split" title="Some good models say this value pushes the other way">models disagree</span>' : ""}</div></li>`;
+  }).join("");
+  const more = el("drivers-more");
+  more.hidden = rows.length <= DRIVERS_SHOWN;
+  more.textContent = driversAll ? "Show fewer" : `Show all ${rows.length}`;
+  for (const b of el("drivers-toggle").querySelectorAll("button"))
+    b.setAttribute("aria-pressed", String(b.dataset.model === driversModel));
+}
+el("drivers-toggle").addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-model]");
+  if (!b || !lastScene) return;
+  driversModel = b.dataset.model;
+  renderDrivers(lastScene);
+});
+el("drivers-more").addEventListener("click", () => {
+  driversAll = !driversAll;
+  if (lastScene) renderDrivers(lastScene);
+});
+el("drivers-tip").innerHTML = G.tip("Compared with an average person: how much each value " +
+  "pushes the model toward one answer. The thin line shows what the other good models say; " +
+  "when it crosses the middle, good models disagree on which way that value pushes.", "right");
+
 // ---- what can you change: free / only up / only down / can't change, per value
 
 const RULE_TEXT = { free: "Free", up: "Only up", down: "Only down", fixed: "Can’t change" };
 const RULE_ICON = { up: "↑", down: "↓" };
+const ONE_WAY = {
+  up: ' <span class="one-way" title="Can only go up, so never suggested lower">↑</span>',
+  down: ' <span class="one-way" title="Can only go down, so never suggested higher">↓</span>',
+};
 
 function ruleChip(r) {
   const icon = r.rule === "fixed" ? G.LOCK : RULE_ICON[r.rule] || "";
@@ -640,7 +677,7 @@ function personValues(scene) {
 async function predict(values) {
   const resp = await fetch("/api/people", {
     method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ dataset: state.dataset, people: [values] }),
+    body: JSON.stringify({ dataset: state.dataset, people: [values], lens: state.lens }),
   });
   const body = await resp.json();
   if (!resp.ok) throw new Error(body.error || "prediction failed");
@@ -665,7 +702,9 @@ function whatifFeatures(scene) {
   const meta = new Map(scene.features.map((f) => [f.name, f]));
   return scene.deltas
     .filter((r) => !r.group && !r.immutable && meta.has(r.name))
-    .sort((a, b) => (rank.get(a.name) ?? 1e9) - (rank.get(b.name) ?? 1e9))
+    // freely changeable values first, then one-way ones (like age), each by importance
+    .sort((a, b) => (a.rule !== "free") - (b.rule !== "free") ||
+      (rank.get(a.name) ?? 1e9) - (rank.get(b.name) ?? 1e9))
     .slice(0, 4)
     .map((r) => ({ r, f: meta.get(r.name) }));
 }
@@ -1012,7 +1051,7 @@ function fieldHTML(f) {
   const unit = f.unit ? ` <span class="unit">(${f.unit})</span>` : "";
   const imm = f.immutable
     ? ` <span class="imm-tag" title="Can’t change, so never recommended">${G.LOCK}</span>`
-    : "";
+    : ONE_WAY[f.monotone] || "";
   const hint = f.desc ? " " + G.tip(f.desc) : "";
   return `<label class="you-row" data-min="${f.min}" data-max="${f.max}"
                  data-p5="${f.p5}" data-p95="${f.p95}"
@@ -1111,6 +1150,7 @@ function updatePanel(scene) {
   renderLegend(scene);
   renderVerdict(scene);
   renderCompare(scene);
+  renderDrivers(scene);
   renderRecommend(scene);
   renderWhatif(scene);
   el("compare-typical").href = `/compare.html?dataset=${encodeURIComponent(state.dataset)}` +
@@ -1159,13 +1199,13 @@ async function drawScene() {
     resp = await fetch("/api/scene", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ dataset: state.dataset, point: state.point, plane: state.plane,
-                             rules: state.rules, view: state.view }),
+                             rules: state.rules, view: state.view, lens: state.lens }),
     });
   } else if (state.custom) {
     resp = await fetch("/api/scene", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ dataset: state.dataset, custom: state.custom, rules: state.rules,
-                             view: state.view }),
+                             view: state.view, lens: state.lens }),
     });
   } else {
     const url = new URL("/api/scene", location.origin);
@@ -1173,6 +1213,7 @@ async function drawScene() {
     if (state.query != null) url.searchParams.set("query", state.query);
     if (Object.keys(state.rules).length) url.searchParams.set("rules", JSON.stringify(state.rules));
     if (state.view !== "everyone") url.searchParams.set("view", state.view);
+    if (state.lens) url.searchParams.set("lens", state.lens);
     resp = await fetch(url);
   }
   const scene = await resp.json();
@@ -1247,6 +1288,21 @@ try { setAround(localStorage.getItem(AROUND_KEY), false); } catch (e) { setAroun
 el("around-tip").innerHTML = G.tip("Everyone: one map for all people. Around this person: " +
   "each map is rebuilt around the star, so both suggested changes show at their true " +
   "distance and direction.");
+
+// ---- developer option: draw the shared map with ECLIPSE (experimental) instead of PCA
+
+function setLens(lens, redraw) {
+  state.lens = lens === "eclipse" ? "eclipse" : null;
+  try {
+    if (state.lens) localStorage.setItem(LENS_KEY, state.lens);
+    else localStorage.removeItem(LENS_KEY);
+  } catch (e) {}
+  el("dev-eclipse").checked = !!state.lens;
+  el("lens-badge").hidden = !state.lens;
+  if (redraw && lastScene && !loading) refresh();
+}
+el("dev-eclipse").addEventListener("change", (e) => setLens(e.target.checked ? "eclipse" : null, true));
+try { setLens(localStorage.getItem(LENS_KEY), false); } catch (e) { setLens(null, false); }
 
 el("map-toggle").addEventListener("click", (e) => {
   const b = e.target.closest("button[data-view]");

@@ -16,6 +16,8 @@
         if (t !== "dark" && t !== "light")
           t = matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
         document.documentElement.setAttribute("data-theme", t);
+        var p = localStorage.getItem("glimpse-palette");
+        if (p) document.documentElement.setAttribute("data-palette", p);
       } catch (e) {}
     })();
   </script>
@@ -44,7 +46,8 @@
   <section id="hero">
     <div id="hero-maps">
       <div class="map-head">
-        <h2 class="hero-h">Map <span id="map-tip"></span>
+        <h2 class="hero-h">Map <span id="lens-badge" class="dev-badge" hidden>ECLIPSE · dev</span>
+          <span id="map-tip"></span>
           <span class="sub">Click anywhere · drag a box to zoom</span></h2>
         <label class="switch" id="old-graph-switch">
           <input type="checkbox" id="old-graph"> Old GLIMPSE graph (test)</label>
@@ -80,6 +83,13 @@
       </div>
       <p id="map-note" role="status" hidden></p>
       <ul id="legend"></ul>
+      <aside id="dev-box" class="wip-card dev-card" aria-label="Developer options">
+        <div class="wip-tag">[developer · wip]</div>
+        <label class="switch"><input type="checkbox" id="dev-eclipse">
+          Draw the map with ECLIPSE (experimental)</label>
+        <p class="sub">The site uses PCA. ECLIPSE tilts the map toward the model.
+          <a href="/eclipse.html">ECLIPSE vs PCA</a></p>
+      </aside>
     </div>
 
     <aside id="hero-risk">
@@ -95,6 +105,15 @@
           <button type="button" id="compare-more" class="link-btn" hidden></button>
           <a id="compare-typical" class="link-btn" href="/compare.html">Compare with a typical person</a>
         </p>
+      </section>
+      <section id="drivers" aria-labelledby="drivers-h">
+        <h2 id="drivers-h">What drove it <span id="drivers-tip"></span></h2>
+        <div id="drivers-toggle" role="group" aria-label="Which model">
+          <button type="button" data-model="linear" aria-pressed="true">Simple</button>
+          <button type="button" data-model="mlp" aria-pressed="false">Flexible</button>
+        </div>
+        <ul id="drivers-list"></ul>
+        <p class="cmp-links"><button type="button" id="drivers-more" class="link-btn" hidden></button></p>
       </section>
     </aside>
   </section>

@@ -1,5 +1,6 @@
 """Fast predictions for entered people, and save renaming / listing."""
 import json
+import math
 import sys
 import unittest
 from pathlib import Path
@@ -131,8 +132,34 @@ class RuleTests(unittest.TestCase):
 
     def test_defaults_lock_the_topics_fixed_values(self):
         _, out = self.scene()
-        self.assertEqual(self.row(out, "Age")["rule"], "fixed")
+        self.assertEqual(self.row(out, "DiabetesPedigreeFunction")["rule"], "fixed")
         self.assertEqual(self.row(out, "Glucose")["rule"], "free")
+
+    def test_one_way_values_only_go_up_by_default(self):
+        # Age and pregnancies can only go up (monotonic); a suggestion never lowers them.
+        _, out = self.scene(custom={"Glucose": 170, "BMI": 38, "Age": 45, "Pregnancies": 6})
+        for name in ("Age", "Pregnancies"):
+            row = self.row(out, name)
+            self.assertEqual(row["rule"], "up")
+            for key in ("linear", "mlp", "linear_quick", "mlp_quick"):
+                self.assertGreaterEqual(row[key]["cf_real"], row["x0_real"] - 1e-3, (name, key))
+        feats = {f["name"]: f for f in out["features"]}
+        self.assertEqual(feats["Age"]["monotone"], "up")
+        self.assertFalse(feats["Age"]["immutable"])
+
+    def test_what_drove_it_adds_up_and_covers_every_good_model(self):
+        _, out = self.scene()
+        for key in ("linear", "mlp"):
+            d = out["drivers"][key]
+            pushes = [r["push"] for r in d["rows"]]
+            self.assertEqual(pushes, sorted(pushes, key=lambda v: -abs(v)))   # biggest first
+            for r in d["rows"]:
+                self.assertLessEqual(r["lo"], r["push"] + 1e-9)
+                self.assertGreaterEqual(r["hi"], r["push"] - 1e-9)
+            # pushes add up to this person's score minus an average person's
+            p = out["panels"][key]["metrics"]["p_bad_erm_x0"]
+            score = math.log(p / (1 - p))
+            self.assertAlmostEqual(sum(pushes) + d["base"], score, delta=0.02)
 
     def test_only_up_and_only_down_are_respected(self):
         _, free = self.scene()

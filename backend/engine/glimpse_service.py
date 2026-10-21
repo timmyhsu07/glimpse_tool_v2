@@ -21,26 +21,34 @@ def _ensure(dataset, eps):
             blob = pickle.load(f)
         cf_core._MODELS[key] = blob["m"]
         # A saved map of another kind is ignored; the right one is fitted on use.
-        if getattr(blob["lens"], "key", "eclipse") == cf_core.MAP_LENS:
-            cf_core._LENSES[key] = blob["lens"]
+        kind = getattr(blob["lens"], "key", "eclipse")
+        if kind in cf_core.LENSES:
+            cf_core._LENSES[key + (kind,)] = blob["lens"]
 
 
-def scene(dataset, eps=EPS, query_id=None, custom=None, constraints=None, view="everyone"):
+def scene(dataset, eps=EPS, query_id=None, custom=None, constraints=None, view="everyone",
+          lens=None):
     _ensure(dataset, eps)
     return cf_core.get_scene(dataset, eps=eps, query_id=query_id, custom=custom,
-                             constraints=constraints, view=view)
+                             constraints=constraints, view=view, lens=lens)
 
 
-def people(dataset, customs, eps=EPS):
+def people(dataset, customs, eps=EPS, lens=None):
     _ensure(dataset, eps)
-    return cf_core.people(dataset, customs, eps=eps)
+    return cf_core.people(dataset, customs, eps=eps, lens=lens)
 
 
-def decode(dataset, point, eps=EPS, plane=None):
+def decode(dataset, point, eps=EPS, plane=None, lens=None):
     _ensure(dataset, eps)
-    return cf_core.decode_point(dataset, point, eps=eps, plane=plane)
+    return cf_core.decode_point(dataset, point, eps=eps, plane=plane, lens=lens)
+
+
+def lens_report(dataset, eps=EPS):
+    _ensure(dataset, eps)
+    return cf_core.lens_report(dataset, eps=eps)
 
 
 DATASETS = cf_core.DATASETS
 VIEWS = cf_core.VIEWS
+LENSES = cf_core.LENSES
 VALID = {d["key"] for d in DATASETS}
