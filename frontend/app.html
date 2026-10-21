@@ -97,6 +97,15 @@
         <div id="verdict-who" class="sub"></div>
         <div id="verdict-headline"></div>
         <div id="verdict-models"></div>
+        <div id="summary-row">
+          <div id="ask-log" aria-live="polite" hidden></div>
+          <form id="ask-form" class="ask-form">
+            <input id="ask-input" type="text" maxlength="300" autocomplete="off"
+                   placeholder="Ask about this result" aria-label="Ask about this result">
+            <button type="submit" id="ask-btn" class="tool-btn">Ask</button>
+            <button type="button" id="summarize-btn" class="tool-btn">Summarize</button>
+          </form>
+        </div>
       </div>
       <section id="ways" aria-labelledby="ways-h">
         <h2 id="ways-h">Three ways to change it <span id="ways-tip"></span></h2>

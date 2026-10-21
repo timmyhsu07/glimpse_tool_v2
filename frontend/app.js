@@ -442,6 +442,7 @@ function renderVerdict(scene) {
     `<span class="badge ${close ? "close" : "clear"}">` +
     `${close ? "⚠ Close call · models disagree" : "✓ Clear · models agree"}</span>`;
 
+  clearSummary();
   el("verdict-models").innerHTML = ["linear", "mlp"].map((which) => {
     const m = scene.panels[which].metrics;
     const name = which === "linear" ? "Simple model" : "Flexible model";
@@ -460,6 +461,130 @@ function renderVerdict(scene) {
     </div>`;
   }).join("");
 }
+
+// ---- plain-language summary, written on demand by a small Hugging Face model
+
+let summarySeq = 0;
+
+function clearSummary() {
+  summarySeq++;
+  const btn = document.getElementById("summarize-btn");
+  const ask = document.getElementById("ask-btn");
+  const log = document.getElementById("ask-log");
+  const input = document.getElementById("ask-input");
+  if (btn) { btn.disabled = false; btn.textContent = "Summarize"; }
+  if (ask) { ask.disabled = false; ask.textContent = "Ask"; }
+  if (log) { log.replaceChildren(); log.hidden = true; }
+  if (input) input.value = "";
+}
+
+function startTurn(question) {
+  const log = document.getElementById("ask-log");
+  if (!log) return null;
+  log.hidden = false;
+  const item = document.createElement("div");
+  item.className = "ask-turn";
+  if (question) {
+    const q = document.createElement("p");
+    q.className = "ask-q";
+    q.textContent = question;
+    item.appendChild(q);
+  }
+  const answer = document.createElement("p");
+  answer.className = "summary-text";
+  answer.textContent = "Loading a small model. The first time can take a minute.";
+  const note = document.createElement("p");
+  note.className = "sub";
+  note.hidden = true;
+  item.append(answer, note);
+  log.appendChild(item);
+  return { answer, note };
+}
+
+function setAskBusy(busy, label) {
+  const btn = document.getElementById("summarize-btn");
+  const ask = document.getElementById("ask-btn");
+  if (btn) { btn.disabled = busy; if (!busy) btn.textContent = "Summarize"; }
+  if (ask) { ask.disabled = busy; if (!busy) ask.textContent = "Ask"; }
+  if (busy && label === "Summarizing…" && btn) btn.textContent = label;
+  if (busy && label === "Asking…" && ask) ask.textContent = label;
+}
+
+function resultBrief(scene) {
+  const [goodName, badName] = scene.class_names;
+  const q = scene.query;
+  const who = q.from_map ? "The person at this spot" : q.custom ? "You" : `Person ${q.id}`;
+  const models = ["linear", "mlp"].map((which) => {
+    const m = scene.panels[which].metrics;
+    const name = which === "linear" ? "The simple model" : "The flexible model";
+    const side = m.pred_bad ? badName : goodName;
+    const chance = Math.round(m.p_bad_erm_x0 * 100);
+    const lo = Math.round(m.p_bad_best_x0 * 100);
+    const hi = Math.round(m.p_bad_worst_x0 * 100);
+    return `${name} says ${side}, with a ${chance}% chance of ${badName}. ` +
+      `Other good models range from ${lo}% to ${hi}%.`;
+  }).join(" ");
+  const lm = scene.panels.linear.metrics;
+  const close = lm.p_bad_best_x0 < 0.5 && lm.p_bad_worst_x0 > 0.5;
+  const agree = close
+    ? "The good models disagree, so this is a close call."
+    : "The good models agree.";
+  const rows = (scene.drivers && scene.drivers.linear && scene.drivers.linear.rows) || [];
+  const drivers = rows.filter((r) => Math.abs(r.push) > 0.005).slice(0, 3).map((r) => r.label);
+  const drove = drivers.length
+    ? ` The values that push the simple model most are ${drivers.join(", ")}.` : "";
+  let change = "";
+  if (!lm.pred_bad)
+    change = ` Nothing needs to change to stay on the ${goodName} side.`;
+  else if (kindOk(scene, "linear", "quick")) {
+    const bits = topChanges(scene, "linear", "quick", 3).map((c) =>
+      `${c.label} from ${c.before} to ${c.after}${c.unit ? " " + c.unit : ""}`);
+    if (bits.length)
+      change = " The smallest change for the simple model would move " + bits.join(", ") + ".";
+  }
+  return `${who}. ${models} ${agree}${drove}${change}`;
+}
+
+async function askModel(question) {
+  if (!lastScene) return;
+  const seq = ++summarySeq;
+  const turn = startTurn(question);
+  if (!turn) return;
+  setAskBusy(true, question ? "Asking…" : "Summarizing…");
+  try {
+    const resp = await fetch("/api/summarize", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(question
+        ? { text: resultBrief(lastScene), question }
+        : { text: resultBrief(lastScene) }),
+    });
+    const body = await resp.json();
+    if (seq !== summarySeq) return;
+    if (!resp.ok) throw new Error(body.error || "request failed");
+    turn.answer.textContent = body.summary;
+    turn.note.hidden = false;
+    turn.note.textContent = body.model
+      ? `Written by ${body.model}. Research summary only.`
+      : "Left out because it did not stay with the numbers on this page.";
+    if (question) {
+      const input = document.getElementById("ask-input");
+      if (input) input.value = "";
+    }
+  } catch (e) {
+    if (seq !== summarySeq) return;
+    turn.answer.textContent = e.message || "Couldn’t answer. Try again.";
+  } finally {
+    if (seq === summarySeq) setAskBusy(false);
+  }
+}
+const summarizeBtn = document.getElementById("summarize-btn");
+if (summarizeBtn) summarizeBtn.addEventListener("click", () => askModel(""));
+const askForm = document.getElementById("ask-form");
+if (askForm) askForm.addEventListener("submit", (e) => {
+  e.preventDefault();
+  const q = (document.getElementById("ask-input").value || "").trim();
+  if (q) askModel(q);
+});
 
 // You vs everyone: where each value sits among all people in the data.
 let compareAll = false;
