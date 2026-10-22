@@ -97,16 +97,24 @@
         <div id="verdict-who" class="sub"></div>
         <div id="verdict-headline"></div>
         <div id="verdict-models"></div>
-        <div id="summary-row">
-          <div id="ask-log" aria-live="polite" hidden></div>
-          <form id="ask-form" class="ask-form">
-            <input id="ask-input" type="text" maxlength="300" autocomplete="off"
-                   placeholder="Ask about this result" aria-label="Ask about this result">
-            <button type="submit" id="ask-btn" class="tool-btn">Ask</button>
-            <button type="button" id="summarize-btn" class="tool-btn">Summarize</button>
-          </form>
-        </div>
       </div>
+      <section id="compare" aria-labelledby="compare-h">
+        <h2 id="compare-h">How you compare <span id="compare-tip"></span></h2>
+        <ul id="compare-list"></ul>
+        <p class="cmp-links">
+          <button type="button" id="compare-more" class="link-btn" hidden></button>
+          <a id="compare-typical" class="link-btn" href="/compare.html">Compare with a typical person</a>
+        </p>
+      </section>
+      <section id="drivers" aria-labelledby="drivers-h">
+        <h2 id="drivers-h">What drove it <span id="drivers-tip"></span></h2>
+        <div id="drivers-toggle" role="group" aria-label="Which model">
+          <button type="button" data-model="linear" aria-pressed="true">Simple</button>
+          <button type="button" data-model="mlp" aria-pressed="false">Flexible</button>
+        </div>
+        <ul id="drivers-list"></ul>
+        <p class="cmp-links"><button type="button" id="drivers-more" class="link-btn" hidden></button></p>
+      </section>
       <section id="ways" aria-labelledby="ways-h">
         <h2 id="ways-h">Three ways to change it <span id="ways-tip"></span></h2>
         <div id="ways-toggle" role="group" aria-label="Which model">
@@ -115,16 +123,60 @@
         </div>
         <ol id="ways-list"></ol>
       </section>
-      <a id="details-link" class="btn-primary details-btn" href="/details.html">See all details →</a>
-      <p class="sub details-sub">How you compare, what drove it, what-if and your plan.</p>
+      <p class="cmp-links"><a id="details-link" class="link-btn" href="/app.html#recommend">See all details →</a></p>
     </aside>
   </section>
 
-  <details id="rules" class="rules-map">
-    <summary><span class="rules-title">What can you change?</span>
-      <span id="rules-summary"></span><span id="rules-tip"></span></summary>
-    <div id="rules-list"></div>
-    <p class="tool-buttons"><button type="button" id="rules-reset">Back to defaults</button></p>
+  <section id="recommend">
+    <h2>What would change it <span id="reco-tip"></span></h2>
+    <details id="rules">
+      <summary><span class="rules-title">What can you change?</span>
+        <span id="rules-summary"></span><span id="rules-tip"></span></summary>
+      <div id="rules-list"></div>
+      <p class="tool-buttons"><button type="button" id="rules-reset">Back to defaults</button></p>
+    </details>
+    <div class="reco-tabs" role="tablist" aria-label="Kind of change">
+      <button type="button" role="tab" id="tab-quick" data-kind="quick" aria-selected="true">
+        <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M13 2 4 14h7l-1 8 9-12h-7z"/></svg>
+        Quickest change</button>
+      <button type="button" role="tab" id="tab-safe" data-kind="safe" aria-selected="false">
+        <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 4 6v6c0 5 3.4 8.3 8 9 4.6-.7 8-4 8-9V6z"/></svg>
+        Safest change</button>
+      <span id="reco-kind-tip"></span>
+    </div>
+    <div id="reco-lists"></div>
+
+    <div class="reco-tools">
+      <section id="whatif" class="tool-card" aria-labelledby="whatif-h">
+        <h3 id="whatif-h">What if… <span id="whatif-tip"></span></h3>
+        <div id="whatif-sliders"></div>
+        <div id="whatif-result" class="whatif-result" role="status" aria-live="polite"></div>
+        <p class="tool-buttons">
+          <button type="button" id="whatif-apply">Use these numbers</button>
+          <button type="button" id="whatif-reset">Reset</button>
+        </p>
+      </section>
+      <section id="plan" class="tool-card" aria-labelledby="plan-h">
+        <h3 id="plan-h">My plan <span id="plan-tip"></span></h3>
+        <ul id="plan-list"></ul>
+        <div id="plan-result" class="whatif-result" role="status" aria-live="polite"></div>
+        <p class="tool-buttons">
+          <button type="button" id="plan-save">Save as plan</button>
+          <a id="plan-compare" class="link-btn" href="#">Compare with now</a>
+        </p>
+        <p id="plan-msg" class="sub" role="status"></p>
+      </section>
+    </div>
+  </section>
+
+  <details id="changes">
+    <summary>Every value, before and after <span id="changes-tip"></span></summary>
+    <div id="changes-table"></div>
+    <details id="changes-chart-details">
+      <summary>Size of each change (chart)</summary>
+      <div id="plot-delta"></div>
+      <p id="delta-caption" class="sub"></p>
+    </details>
   </details>
 
   <details id="you-details">
@@ -161,6 +213,27 @@
     </section>
   </details>
 
+  <details id="expert">
+    <summary>Details for experts</summary>
+    <p class="sub" id="lens-note"></p>
+
+    <h3>Distance to the other side</h3>
+    <table id="dist">
+      <tr><th>change</th><th>simple</th><th>flexible</th></tr>
+      <tr><td>Quick (this model only)</td><td id="d-std-lin">—</td><td id="d-std-mlp">—</td></tr>
+      <tr><td>Safe (every good model)</td><td id="d-ell-lin">—</td><td id="d-ell-mlp">—</td></tr>
+    </table>
+
+    <h3>Raw metrics</h3>
+    <pre id="metrics">—</pre>
+
+    <details id="feat-details">
+      <summary>This person’s values</summary>
+      <div id="detail"></div>
+    </details>
+  </details>
+
+  <a id="map-link" href="/app.html" hidden></a>
   <script src="/common.js"></script>
   <script src="/app.js"></script>
 </body>

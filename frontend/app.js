@@ -1348,7 +1348,7 @@ function updatePanel(scene) {
     `&you=${encodeYou(personValues(scene))}`;
   const q = scene.query, who = `dataset=${encodeURIComponent(state.dataset)}&` +
     (q.custom ? `you=${encodeYou(personValues(scene))}` : `query=${q.id}`);
-  el("details-link").href = `/details.html?${who}`;
+  el("details-link").href = `/app.html?${who}#recommend`;
   el("map-link").href = `/app.html?${who}`;
   renderWays(scene);
   renderChanges(scene);

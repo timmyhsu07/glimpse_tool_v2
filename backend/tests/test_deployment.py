@@ -31,9 +31,21 @@ class VercelConfigTests(unittest.TestCase):
 
     def test_bundled_paths_exist(self):
         for rel in ("api/index.py", "backend/api/index.py", "backend/engine/precomputed",
-                    "frontend/index.html", "frontend/login.html", "frontend/how.html",
+                    "frontend/index.html", "frontend/login.html", "frontend/tutorial.html",
                     "frontend/eclipse.html", "frontend/details.html"):
             self.assertTrue((ROOT / rel).exists(), rel)
+
+    def test_tutorial_routes_preserve_the_old_how_urls(self):
+        static = _load_entry()._backend._STATIC
+        self.assertEqual(static["/tutorial.html"][0], "tutorial.html")
+        self.assertEqual(static["/tutorial"][0], "tutorial.html")
+        self.assertEqual(static["/how.html"][0], "tutorial.html")
+        self.assertEqual(static["/how"][0], "tutorial.html")
+
+    def test_details_route_uses_the_integrated_map_page(self):
+        static = _load_entry()._backend._STATIC
+        self.assertEqual(static["/details.html"][0], "app.html")
+        self.assertEqual(static["/details"][0], "app.html")
 
     def test_entry_point_exposes_the_backend_handler(self):
         entry = _load_entry()

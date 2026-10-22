@@ -46,7 +46,4 @@ async function init() {
   try { saved = localStorage.getItem(TOPIC_KEY); } catch (e) {}
   choose(datasets.some((d) => d.key === saved) ? saved : datasets[0].key);
 }
-document.getElementById("diff-tip").innerHTML = G.tip("Many different models fit the same " +
-  "data about equally well. Researchers call this group the Rashomon set. Most counterfactual " +
-  "tools explain just one model from it; GLIMPSE takes the whole set into account.");
 init();

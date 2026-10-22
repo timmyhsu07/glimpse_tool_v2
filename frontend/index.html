@@ -16,8 +16,6 @@
         if (t !== "dark" && t !== "light")
           t = matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
         document.documentElement.setAttribute("data-theme", t);
-        var p = localStorage.getItem("glimpse-palette");
-        if (p) document.documentElement.setAttribute("data-palette", p);
       } catch (e) {}
     })();
   </script>
@@ -25,26 +23,35 @@
 </head>
 <body data-page="home">
   <header id="titlebar">
-    <a class="brand" href="/">GLIMPSE</a>
+    <a class="brand" href="/" aria-label="GLIMPSE home">GLIMPSE<span class="brand-mark"> / RESEARCH</span></a>
     <nav id="nav" aria-label="Main">
       <a href="/" data-page="home">Home</a>
       <a href="/app.html" data-page="app">Map</a>
+      <a href="/tutorial.html" data-page="tutorial">Tutorial</a>
       <a href="/compare.html" data-page="compare">Compare</a>
-      <a href="/how.html" data-page="how">How it works</a>
-      <a href="/login.html" data-page="account" id="account-link">Sign in</a>
     </nav>
-    <button id="theme-toggle" class="theme-btn" type="button"
-            aria-label="Toggle light and dark mode"></button>
+    <div class="header-actions">
+      <a class="signin-link" href="/login.html" id="account-link">Sign in</a>
+      <button id="theme-toggle" class="theme-btn" type="button" aria-label="Toggle light and dark mode"></button>
+    </div>
   </header>
 
   <main id="home">
     <section class="home-hero">
-      <h1>See where you stand, and what would change it.</h1>
-      <p class="home-sub">Models can agree on the data and still disagree about you.</p>
+      <p class="eyebrow">INTERPRETABLE MACHINE-LEARNING RESEARCH</p>
+      <h1>One person. Many models.<br><span class="hero-accent">More than one answer.</span></h1>
+      <p class="home-sub">GLIMPSE helps you explore when equally capable models disagree about an individual prediction—and what changes might affect that prediction.</p>
+      <div class="hero-links"><a href="/tutorial.html">Explore the tutorial <span aria-hidden="true">→</span></a><span>Research prototype · Interactive exploration</span></div>
+    </section>
+
+    <section class="research-intro" aria-labelledby="research-question">
+      <div class="research-label">THE RESEARCH QUESTION</div>
+      <h2 id="research-question">How reliable is a prediction when good models disagree?</h2>
+      <p>Traditional explanations often focus on one model and one answer. GLIMPSE lets you inspect a range of good models, explore where their predictions differ, and examine possible counterfactual changes—without treating a model output as certainty.</p>
     </section>
 
     <section aria-labelledby="pick-h">
-      <h2 id="pick-h" class="home-h">Pick a topic</h2>
+      <h2 id="pick-h" class="home-h">Choose a dataset</h2>
       <div id="topics" class="topic-grid" role="radiogroup" aria-labelledby="pick-h"></div>
     </section>
 
@@ -53,34 +60,35 @@
       <a id="go-example" class="btn-secondary" href="/app.html">Try an example person</a>
     </div>
 
-    <section class="home-diff" aria-labelledby="diff-h">
-      <h2 id="diff-h" class="home-h">What's different <span id="diff-tip"></span></h2>
-      <div class="diff-grid">
-        <div class="diff-col">
-          <h3>Most “what would change it” tools</h3>
-          <ul>
-            <li>Trust one model's answer.</li>
-            <li>Suggest a change that flips that one model.</li>
-            <li>Show what mattered to that one model.</li>
-          </ul>
-        </div>
-        <div class="diff-col diff-us">
-          <h3>GLIMPSE</h3>
-          <ul>
-            <li>Checks every model that fits the data about as well.</li>
-            <li>Shows the range of answers, so a close call looks close.</li>
-            <li>Offers a safe change that works for every good model.</li>
-            <li>Shows when good models disagree about what mattered.</li>
-          </ul>
-        </div>
-      </div>
-      <p class="diff-more"><a href="/how.html#why">Why this matters</a></p>
+    <section class="capability-grid" aria-label="What you can explore">
+      <article class="capability-card"><span class="capability-number">01</span><h3>Explore the map</h3><p>See how predictions vary across people and where model behavior is less consistent.</p><a href="/app.html">Open map →</a></article>
+      <article class="capability-card"><span class="capability-number">02</span><h3>Inspect disagreement</h3><p>Compare simple and flexible models instead of relying on a single score.</p><a href="/app.html">Explore predictions →</a></article>
+      <article class="capability-card"><span class="capability-number">03</span><h3>Compare individuals</h3><p>Review feature-level differences and see how two profiles are evaluated.</p><a href="/compare.html">Open comparison →</a></article>
     </section>
 
-    <p class="home-how"><a href="/how.html">How it works</a>
-      <span class="sub">· reading the map, close calls, and the changes it suggests</span></p>
+    <section id="how" aria-labelledby="how-h">
+      <h2 id="how-h" class="home-h">How it works</h2>
+      <ol class="steps">
+        <li><span class="step-n">1</span><b>Pick a topic</b>
+          <span class="sub">Diabetes or breast cancer.</span></li>
+        <li><span class="step-n">2</span><b>Enter your numbers</b>
+          <span class="sub">Or click anywhere on the map.</span></li>
+        <li><span class="step-n">3</span><b>See where you stand</b>
+          <span class="sub">How sure the models are, and how you compare.</span></li>
+        <li><span class="step-n">4</span><b>See what would change it</b>
+          <span class="sub">The smallest changes you can actually make.</span></li>
+      </ol>
+      <details class="how-more">
+        <summary>Why “how sure”?</summary>
+        <p>Many different models fit the same data about equally well, but they
+          can give one person different answers. GLIMPSE shows the whole range,
+          so a close call looks like a close call.</p>
+        <p>The map squeezes everyone onto a flat page. Areas where many people
+          sit look darker. Click any spot to see the person who would be there.</p>
+      </details>
+    </section>
 
-    <p class="home-note sub">For learning and research. Not medical or financial advice.</p>
+    <p class="home-note sub">GLIMPSE is a research and educational prototype. Model outputs are estimates, not ground truth, and should not be used as medical, financial, or other professional advice. <a href="/tutorial.html">Read about assumptions and limitations.</a></p>
   </main>
 
   <script src="/common.js"></script>
