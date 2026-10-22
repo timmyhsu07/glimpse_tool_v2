@@ -1,5 +1,6 @@
 import importlib.util
 import json
+import re
 import unittest
 from pathlib import Path
 
@@ -42,10 +43,19 @@ class VercelConfigTests(unittest.TestCase):
         self.assertEqual(static["/how.html"][0], "tutorial.html")
         self.assertEqual(static["/how"][0], "tutorial.html")
 
-    def test_details_route_uses_the_integrated_map_page(self):
+    def test_details_route_serves_the_details_page(self):
         static = _load_entry()._backend._STATIC
-        self.assertEqual(static["/details.html"][0], "app.html")
-        self.assertEqual(static["/details"][0], "app.html")
+        self.assertEqual(static["/details.html"][0], "details.html")
+        self.assertEqual(static["/details"][0], "details.html")
+
+    def test_pages_share_one_menu_and_link_the_tutorial(self):
+        menus = set()
+        for page in sorted((ROOT / "frontend").glob("*.html")):
+            html = page.read_text()
+            self.assertNotIn("how.html", html, page.name)
+            nav = html[html.index('<nav id="nav"'):html.index("</nav>")]
+            menus.add(" ".join(re.findall(r'href="([^"]+)"', nav)))
+        self.assertEqual(menus, {"/ /app.html /tutorial.html /compare.html"})
 
     def test_entry_point_exposes_the_backend_handler(self):
         entry = _load_entry()

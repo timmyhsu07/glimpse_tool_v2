@@ -29,9 +29,9 @@ _STATIC = {
     "/account.html": ("account.html", _HTML),
     "/compare": ("compare.html", _HTML),
     "/compare.html": ("compare.html", _HTML),
-    "/details": ("app.html", _HTML),
-    "/details.html": ("app.html", _HTML),
-    "/how": ("tutorial.html", _HTML),
+    "/details": ("details.html", _HTML),
+    "/details.html": ("details.html", _HTML),
+    "/how": ("tutorial.html", _HTML),            # old links to the how-it-works page
     "/how.html": ("tutorial.html", _HTML),
     "/tutorial": ("tutorial.html", _HTML),
     "/tutorial.html": ("tutorial.html", _HTML),

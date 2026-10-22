@@ -423,7 +423,7 @@ function renderLegend(scene) {
       "Strictest: the one least on your side. Smallest change: least total change for this " +
       "model. Fewest changes: touches as few values as possible. Safest change: works for " +
       "every good model.")}</li>`,
-    `<li><a href="/how.html#read-map">How to read the map</a></li>`,
+    `<li><a href="/tutorial.html#map">How to read the map</a></li>`,
   ].join("");
 }
 
@@ -1348,7 +1348,7 @@ function updatePanel(scene) {
     `&you=${encodeYou(personValues(scene))}`;
   const q = scene.query, who = `dataset=${encodeURIComponent(state.dataset)}&` +
     (q.custom ? `you=${encodeYou(personValues(scene))}` : `query=${q.id}`);
-  el("details-link").href = `/app.html?${who}#recommend`;
+  el("details-link").href = `/details.html?${who}`;
   el("map-link").href = `/app.html?${who}`;
   renderWays(scene);
   renderChanges(scene);
