@@ -48,6 +48,17 @@ class VercelConfigTests(unittest.TestCase):
         self.assertEqual(static["/details.html"][0], "details.html")
         self.assertEqual(static["/details"][0], "details.html")
 
+    def test_colour_choices_survive_restyles(self):
+        # every page applies the saved colour set, My account offers the picker, and the
+        # stylesheet has the sets and the dashed legend swatch
+        for page in sorted((ROOT / "frontend").glob("*.html")):
+            self.assertIn("glimpse-palette", page.read_text(), page.name)
+        self.assertIn('id="palette-picker"', (ROOT / "frontend/account.html").read_text())
+        css = (ROOT / "frontend/style.css").read_text()
+        for name in ("blue-red", "green-purple", "classic"):
+            self.assertIn(f'[data-palette="{name}"]', css)
+        self.assertIn(".sw.line.dash", css)
+
     def test_pages_share_one_menu_and_link_the_tutorial(self):
         menus = set()
         for page in sorted((ROOT / "frontend").glob("*.html")):

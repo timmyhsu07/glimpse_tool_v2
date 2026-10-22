@@ -12,6 +12,34 @@ async function post(url, data) {
   return { ok: resp.ok, body };
 }
 
+// Colour sets: a strip of the map's colours (good side, middle, bad side) for each.
+function renderPalettes() {
+  const box = el("palette-picker"), now = G.palette();
+  box.innerHTML = Object.entries(G.PALETTES).map(([key, p]) => {
+    const f = G.mapColors(key).field;
+    const strip = f.map(([, col]) => `<i style="background:${col}"></i>`).join("");
+    return `<button type="button" class="palette-card" role="radio" data-key="${key}"
+      aria-checked="${key === now}" tabindex="${key === now ? 0 : -1}">
+      <span class="palette-strip" aria-hidden="true">${strip}</span>
+      <span class="palette-name">${G.esc(p.label)}</span>
+      <span class="sub">${p.safe ? "Colour-blind safe" : "Not colour-blind safe"}</span></button>`;
+  }).join("");
+}
+el("palette-picker").addEventListener("click", (e) => {
+  const card = e.target.closest(".palette-card");
+  if (card) G.setPalette(card.dataset.key);
+});
+el("palette-picker").addEventListener("keydown", (e) => {
+  if (!["ArrowRight", "ArrowDown", "ArrowLeft", "ArrowUp"].includes(e.key)) return;
+  const keys = Object.keys(G.PALETTES), i = keys.indexOf(G.palette());
+  const step = e.key === "ArrowRight" || e.key === "ArrowDown" ? 1 : -1;
+  G.setPalette(keys[(i + step + keys.length) % keys.length]);
+  el("palette-picker").querySelector('[aria-checked="true"]').focus();
+  e.preventDefault();
+});
+document.addEventListener("glimpse-theme", renderPalettes);
+renderPalettes();
+
 function notice(text) {
   el("account-notice").textContent = text;
   el("account-notice").hidden = !text;

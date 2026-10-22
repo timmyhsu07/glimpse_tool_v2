@@ -16,6 +16,8 @@
         if (t !== "dark" && t !== "light")
           t = matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
         document.documentElement.setAttribute("data-theme", t);
+        var p = localStorage.getItem("glimpse-palette");
+        if (p) document.documentElement.setAttribute("data-palette", p);
       } catch (e) {}
     })();
   </script>
