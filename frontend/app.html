@@ -50,8 +50,13 @@
         <h2 class="hero-h">Map <span id="lens-badge" class="dev-badge" hidden>ECLIPSE · dev</span>
           <span id="map-tip"></span>
           <span class="sub">Click anywhere · drag a box to zoom</span></h2>
-        <label class="switch" id="old-graph-switch">
-          <input type="checkbox" id="old-graph"> Old GLIMPSE graph (test)</label>
+        <label class="map-style-control" for="map-style">
+          Visualization
+          <select id="map-style">
+            <option value="density">Density</option>
+            <option value="datapoints">Data points</option>
+          </select>
+        </label>
       </div>
       <div class="map-tools">
         <div id="around-toggle" class="seg" role="group" aria-label="What the map is built around">

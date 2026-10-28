@@ -1886,7 +1886,8 @@ el("changes-tip").innerHTML = G.tip("Now: your numbers. After: the closest perso
 
 function setGraphStyle(old, redraw) {
   oldGraph = old;
-  el("old-graph").checked = old;
+  const style = el("map-style");
+  if (style && style.tagName === "SELECT") style.value = old ? "datapoints" : "density";
   el("disputed-switch").hidden = !old;
   try { localStorage.setItem(GRAPH_KEY, old ? "1" : "0"); } catch (e) {}
   if (redraw && plotsReady && lastScene) {
@@ -1894,7 +1895,8 @@ function setGraphStyle(old, redraw) {
     renderLegend(lastScene);
   }
 }
-el("old-graph").addEventListener("change", (e) => setGraphStyle(e.target.checked, true));
+el("map-style").addEventListener("change", (e) =>
+  setGraphStyle(e.target.value === "datapoints", true));
 el("show-disputed").addEventListener("change", (e) => {
   showDisputed = e.target.checked;
   if (plotsReady && lastScene) redrawPlots(lastScene);

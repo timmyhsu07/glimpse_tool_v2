@@ -346,6 +346,10 @@ table.chg tr.immrow .fname-cell { color: var(--muted); }
 }
 
 /* Map view toggle: simple, flexible, or both */
+.map-style-control { display: inline-flex; align-items: center; gap: 0.45rem;
+  font-size: 0.82rem; font-weight: 600; color: var(--muted); }
+.map-style-control select { font: inherit; font-weight: 600; padding: 0.28rem 0.65rem;
+  border: 1px solid var(--line); border-radius: 999px; background: var(--panel); color: var(--ink); }
 .map-head { display: flex; align-items: baseline; justify-content: space-between;
   gap: 0.6rem 1rem; flex-wrap: wrap; margin-bottom: 0.4rem; }
 .map-head .hero-h { margin-bottom: 0; }
