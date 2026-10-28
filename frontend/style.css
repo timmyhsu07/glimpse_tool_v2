@@ -981,3 +981,6 @@ body[data-page="compare"] :is(button, input, select) {
 .back-link { font-size: 0.9rem; }
 .details-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(22rem, 1fr));
   gap: 1rem; align-items: start; }
+
+/* Legend swatch for density by class: an outlined ring in the class colour */
+.sw.ring { background: transparent; border: 2px solid currentColor; border-radius: 50%; }

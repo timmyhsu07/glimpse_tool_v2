@@ -29,7 +29,7 @@ const LENS_KEY = "glimpse-dev-lens";          // developer option: "eclipse" or 
 let sceneSeq = 0;
 const DISPUTED_SHARE = 0.15;      // "most disputed" = this share with the widest ranges
 let mapView = "both";
-let oldGraph = false;             // false = density map (default), true = the dot map
+let mapStyle = "density";        // "density" (everyone), "classes" (one per class) or "datapoints"
 let showDisputed = false;
 
 const pct = (v) => (v * 100).toFixed(0) + "%";
@@ -98,23 +98,29 @@ function buildPanelTraces(scene, which) {
   traces.push({
     type: "heatmap", x: f.x, y: f.y, z: f.z,
     zmin: 0, zmax: 1, colorscale: P.field, zsmooth: "best",
-    opacity: oldGraph ? 0.6 : P.fieldOpacity, hoverinfo: "none", showscale: which === colorbarPanel(),
+    opacity: mapStyle === "datapoints" ? 0.6 : P.fieldOpacity, hoverinfo: "none",
+    showscale: which === colorbarPanel(),
     colorbar: { title: { text: `chance of ${scene.class_names[1]}`, side: "right",
                          font: { color: tc.font } },
                 tickfont: { color: tc.font },
                 thickness: 12, len: 0.9, x: 1.02 },
   });
 
-  traces.push(...polyTraces(panel.fan, P.fan, 1, 0.18,
-                            "other good models", legend));
+  // The flexible model's lines curl into loops far from the data, where nobody is;
+  // draw those stretches faint so they don't compete with the part that matters.
+  const fan = which === "mlp" ? splitByPeople(panel.fan, scene, which) : { in: panel.fan, out: [] };
+  const worst = which === "mlp" ? splitByPeople(panel.worst, scene, which) : { in: panel.worst, out: [] };
+  traces.push(...polyTraces(fan.in, P.fan, 1, 0.18, "other good models", legend));
+  traces.push(...polyTraces(fan.out, P.fan, 1, 0.05, "other good models", false));
 
-  if (oldGraph) traces.push(...dotTraces(scene, which, legend));
+  if (mapStyle === "datapoints") traces.push(...dotTraces(scene, which, legend));
+  else if (mapStyle === "classes") traces.push(...classDensityTraces(scene, which));
   else traces.push(densityTrace(scene, which));
 
   traces.push(...polyTraces(panel.boundary, P.line, 2.6, 1,
                             "model's line", legend));
-  traces.push(...polyTraces(panel.worst, P.worst, 2.6, 1,
-                            "strictest good model", legend, "dash"));
+  traces.push(...polyTraces(worst.in, P.worst, 2.6, 1, "strictest good model", legend, "dash"));
+  traces.push(...polyTraces(worst.out, P.worst, 1.6, 0.3, "strictest good model", false, "dash"));
 
   const q = scene.query, cf = panel.cfs;
   const qName = q.from_map ? "Person at this spot"
@@ -214,11 +220,12 @@ function disputed(pts) {
 // orange background; see-through outside the bands.
 const DENS_GRID = 110;            // grid cells per side
 const DENS_BANDS = [0.2, 0.4, 0.6, 0.8];
-function densityGrid(scene, which) {
-  const key = scene.panels[which].xy ? which : "all";
+function densityGrid(scene, which, outcome) {
+  const key = `${scene.panels[which].xy ? which : "all"}:${outcome ?? "everyone"}`;
   scene._density = scene._density || {};
   if (scene._density[key]) return scene._density[key];
-  const pts = panelPoints(scene, which);
+  const pts = panelPoints(scene, which).filter((p) => outcome == null || p.outcome === outcome);
+  if (pts.length < 3) return (scene._density[key] = null);
   const xs = pts.map((p) => p.x), ys = pts.map((p) => p.y);
   const n = xs.length;
   const spread = (v) => {
@@ -278,6 +285,58 @@ function densityTrace(scene, which) {
     line: { color: `rgba(${c},0.55)`, width: 1, smoothing: 1.3 },
     showscale: false, hoverinfo: "skip", name: "people",
   };
+}
+
+// Cut lines into the stretches inside the area where people are (outside the density's
+// outer band, i.e. where fewer than 5% of people live) and the stretches outside it.
+const PEOPLE_EDGE = 0.05;
+function splitByPeople(lines, scene, which) {
+  const d = densityGrid(scene, which);
+  const out = { in: [], out: [] };
+  if (!d) return { in: lines, out: [] };
+  const nx = d.x.length, ny = d.y.length, dx = d.x[1] - d.x[0], dy = d.y[1] - d.y[0];
+  const inside = (x, y) => {
+    const i = Math.round((x - d.x[0]) / dx), j = Math.round((y - d.y[0]) / dy);
+    return i >= 0 && j >= 0 && i < nx && j < ny && d.z[j][i] > PEOPLE_EDGE;
+  };
+  for (const ln of lines) {
+    let cur = null, curIn = null;
+    for (let k = 0; k < ln.x.length; k++) {
+      const here = inside(ln.x[k], ln.y[k]);
+      if (cur && here !== curIn) {           // close the stretch, sharing the joint point
+        cur.x.push(ln.x[k]); cur.y.push(ln.y[k]);
+        (curIn ? out.in : out.out).push(cur);
+        cur = null;
+      }
+      if (!cur) { cur = { x: [], y: [] }; curIn = here; if (k) { cur.x.push(ln.x[k - 1]); cur.y.push(ln.y[k - 1]); } }
+      cur.x.push(ln.x[k]); cur.y.push(ln.y[k]);
+    }
+    if (cur && cur.x.length > 1) (curIn ? out.in : out.out).push(cur);
+  }
+  return out;
+}
+
+// Density per class: where the people of each outcome are, in that outcome's colour.
+// Same bands as above, but within each group: the darkest band holds the group's most
+// crowded 20%, the outer line 80%. Drawn mostly as lines so the two groups can overlap.
+const rgbOf = (hex) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)).join(",");
+function classDensityTraces(scene, which) {
+  const P = pal();
+  return [[0, P.good], [1, P.bad]].map(([outcome, color]) => {
+    const d = densityGrid(scene, which, outcome);
+    if (!d) return null;
+    const c = rgbOf(color);
+    return {
+      type: "contour", x: d.x, y: d.y, z: d.z, zmin: 0, zmax: 1,
+      contours: { start: DENS_BANDS[0], end: DENS_BANDS[DENS_BANDS.length - 1],
+                  size: DENS_BANDS[1] - DENS_BANDS[0], coloring: "fill", showlines: true },
+      colorscale: [[0, `rgba(${c},0)`], [0.2, `rgba(${c},0)`], [0.2001, `rgba(${c},0.06)`],
+                   [0.4, `rgba(${c},0.11)`], [0.6, `rgba(${c},0.16)`], [0.8, `rgba(${c},0.22)`],
+                   [1, `rgba(${c},0.22)`]],
+      line: { color: `rgba(${c},0.95)`, width: 1.3, smoothing: 1.3 },
+      showscale: false, hoverinfo: "skip", name: `outcome ${outcome}`,
+    };
+  }).filter(Boolean);
 }
 
 // Axis ranges. Both axes use constrain "domain", so Plotly keeps equal scale by
@@ -404,9 +463,14 @@ function renderLensNote(scene) {
 
 function renderLegend(scene) {
   const [g, b] = scene.class_names, P = pal();
-  const people = oldGraph
+  const people = mapStyle === "datapoints"
     ? `<li><span class="dot" style="background:${P.good}"></span> ${G.esc(g)}` +
       ` <span class="dot" style="background:${P.bad}"></span> ${G.esc(b)}</li>`
+    : mapStyle === "classes"
+    ? `<li><span class="sw ring" style="color:${P.good}"></span> ${G.esc(g)} people` +
+      ` <span class="sw ring" style="color:${P.bad}"></span> ${G.esc(b)} people ` +
+      `${G.tip("Each colour shows where the people with that outcome are. Within each group, " +
+        "the darkest band holds its most crowded 20%; the outer line holds 80%.")}</li>`
     : `<li><span class="sw" style="background:rgba(${P.density},0.25)"></span> Many people ` +
       `${G.tip("Shading shows where people are. The darkest band holds the most crowded 20% of people; " +
         "each lighter band adds another 20%, and the outer line holds 80%.")}</li>`;
@@ -420,7 +484,8 @@ function renderLegend(scene) {
     `<li>★ You · ✕ Smallest change · ◆ Fewest changes · ▪ Safest change</li>`,
     `<li>${G.tip("Background: the simple model’s chance of " + b + ". " +
       "Line: where it flips. Other good models: models that fit the data about as well. " +
-      "Strictest: the one least on your side. Smallest change: least total change for this " +
+      "Strictest: the good model hardest to convince at the safest change (the ▪ sits just " +
+      "past its line). Smallest change: least total change for this " +
       "model. Fewest changes: touches as few values as possible. Safest change: works for " +
       "every good model.")}</li>`,
     `<li><a href="/tutorial.html#map">How to read the map</a></li>`,
@@ -1463,6 +1528,7 @@ function setMapView(view, redraw) {
     b.setAttribute("aria-pressed", String(b.dataset.view === view));
   if (redraw && plotsReady && lastScene) {
     redrawPlots(lastScene);
+    showMapNote(lastScene);
     for (const div of Object.values(plotDivs))
       if (!div.closest(".plot-cell").hidden) Plotly.Plots.resize(div);
   }
@@ -1570,16 +1636,31 @@ function dotAt(div, [px, py]) {
   return best;
 }
 
-// Share of a change below which the map clearly undersells it.
-const OFF_MAP = 0.5;
+// On the shared map a point is drawn where its look-alike sits: the values the flat map
+// can't show are set to typical ones. Say when that puts the star or a change on the
+// wrong side of its line, panel by panel, and offer the exact view.
+const PANEL_NAME = { linear: "Simple", mlp: "Flexible" };
 function offMapNote(scene) {
-  const which = mapView === "mlp" ? "mlp" : "linear";
-  const m = scene.panels[which].metrics;
-  const share = safeOk(scene, which) ? m.safe_on_map : quickOk(scene, which) ? m.quick_on_map : 1;
-  return share != null && share < OFF_MAP && m.pred_bad
-    ? `<span class="sub">Only ${Math.round(share * 100)}% of this change shows on the map; the rest is in
-       values the map can’t draw, so the arrow may look short of the line.</span>` : "";
+  if (scene.view === "around") return "";
+  const issues = [];
+  for (const which of visiblePanels()) {
+    const m = scene.panels[which].metrics, marks = [];
+    if (m.star_drawn_right === false) marks.push("★ you");
+    if (!m.pred_bad) { if (marks.length) issues.push([which, marks]); continue; }
+    if (quickOk(scene, which) && m.quick_drawn_right === false) marks.push("✕ smallest change");
+    if (safeOk(scene, which) && m.safe_drawn_right === false) marks.push("▪ safest change");
+    if (marks.length) issues.push([which, marks]);
+  }
+  if (!issues.length) return "";
+  const list = issues.map(([which, marks]) =>
+    `${PANEL_NAME[which]} map: ${marks.join(", ")}`).join("; ");
+  return `<span class="sub">Drawn on the wrong side of its line (${list}). Part of the ` +
+    `change is in values this flat map can’t show, so the picture is approximate there. ` +
+    `<button type="button" class="link-btn" data-show-around>Show it exactly</button></span>`;
 }
+el("map-note").addEventListener("click", (e) => {
+  if (e.target.closest("[data-show-around]")) setAround("around", true);
+});
 
 function showMapNote(scene) {
   const note = el("map-note"), d = scene.decoded;
@@ -1884,25 +1965,27 @@ el("plan-tip").innerHTML = G.tip("Tick the changes you’ll make. Save the plan 
 el("changes-tip").innerHTML = G.tip("Now: your numbers. After: the closest person every " +
   "good model would put on the other side.");
 
-function setGraphStyle(old, redraw) {
-  oldGraph = old;
-  const style = el("map-style");
-  if (style && style.tagName === "SELECT") style.value = old ? "datapoints" : "density";
-  el("disputed-switch").hidden = !old;
-  try { localStorage.setItem(GRAPH_KEY, old ? "1" : "0"); } catch (e) {}
+const MAP_STYLES = ["density", "classes", "datapoints"];
+function setMapStyle(style, redraw) {
+  // older saves stored "1" for the dot map and "0" for the density map
+  style = style === "1" ? "datapoints" : MAP_STYLES.includes(style) ? style : "density";
+  mapStyle = style;
+  const select = el("map-style");
+  if (select && select.tagName === "SELECT") select.value = style;
+  el("disputed-switch").hidden = style !== "datapoints";
+  try { localStorage.setItem(GRAPH_KEY, style); } catch (e) {}
   if (redraw && plotsReady && lastScene) {
     redrawPlots(lastScene);
     renderLegend(lastScene);
   }
 }
-el("map-style").addEventListener("change", (e) =>
-  setGraphStyle(e.target.value === "datapoints", true));
+el("map-style").addEventListener("change", (e) => setMapStyle(e.target.value, true));
 el("show-disputed").addEventListener("change", (e) => {
   showDisputed = e.target.checked;
   if (plotsReady && lastScene) redrawPlots(lastScene);
 });
-try { setGraphStyle(localStorage.getItem(GRAPH_KEY) === "1", false); }
-catch (e) { setGraphStyle(false, false); }
+try { setMapStyle(localStorage.getItem(GRAPH_KEY), false); }
+catch (e) { setMapStyle("density", false); }
 
 function visiblePanels() {
   return ["linear", "mlp"].filter((w) => !el("cell-" + w).hidden);

@@ -87,6 +87,20 @@ class AroundViewTests(unittest.TestCase):
                 c = p["cfs"][kind]
                 self.assertAlmostEqual(math.hypot(c["x"], c["y"]), c["distance"], places=3)
 
+    def test_marks_are_on_the_right_side_of_their_lines(self):
+        # Around this person: the star, the smallest and the safest change are exact,
+        # so each is drawn on the side of its line where it really is.
+        for which, p in self.scene["panels"].items():
+            m = p["metrics"]
+            for flag in ("star_drawn_right", "quick_drawn_right", "safe_drawn_right"):
+                self.assertTrue(m[flag], (which, flag))
+        # The shared map reports the same flags; there they may be false.
+        _, shared = index.route("GET", "/api/scene", "dataset=pima", None)
+        for p in shared["panels"].values():
+            for flag in ("star_drawn_right", "quick_drawn_right", "safe_drawn_right",
+                         "sparse_drawn_right"):
+                self.assertIsInstance(p["metrics"][flag], bool)
+
     def test_clicking_the_quick_change_gives_that_change(self):
         for which in ("linear", "mlp"):
             p = self.scene["panels"][which]

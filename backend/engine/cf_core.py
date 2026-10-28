@@ -288,6 +288,9 @@ def _around(setup, which, x0, panel):
     m["d2_cf_to_erm"] = None if d_erm is None else round(d_erm, 4)
     m["d2_cf_to_worst"] = None if d_worst is None else round(d_worst, 4)
     m["worst_closer"] = bool(d_worst is not None and d_erm is not None and d_worst <= d_erm + 1e-9)
+    m.update(_drawn_right(setup, which, lambda x: x0 + A.T @ (A @ (x - x0)), x0,
+                          panel["_cf_std_full"], panel["_cf_rob_full"],
+                          panel["_cf_sparse_full"], panel["_theta_w"]))
 
 
 def _theta_line(lens, theta, bounds):
@@ -435,6 +438,30 @@ def _rules(setup, x0, constraints=None):
     return fixed, (lo, hi), rule
 
 
+def _drawn_right(setup, which, decode, x0, cf_std, cf_rob, cf_sparse, theta_w):
+    """Does the map draw each point on the side of its line where it really is?
+
+    ``decode`` maps a person to the person the map shows at their spot. On the shared
+    map that is a different person (the values the flat map can't show are set to
+    typical ones), so a change can land on the wrong side of the drawn line even though
+    it works; on the "around this person" slice the person and both changes are exact.
+    """
+    toward = 1.0 if TARGET_CLASS == 1 else -1.0       # target side: toward * logit > 0
+    if which == "linear":
+        logit = lambda x: float(setup["lin"].logit(x)[0])
+        worst = lambda x: float(np.append(x, 1.0) @ theta_w)
+    else:
+        mlp = setup["mlp"]
+        logit = lambda x: float(mlp.logit(x[None, :])[0])
+        worst = lambda x: float(mlp.logit_of_theta(theta_w, x[None, :])[0])
+    return {
+        "star_drawn_right": bool(np.sign(logit(decode(x0))) == np.sign(logit(x0))),
+        "quick_drawn_right": bool(toward * logit(decode(cf_std)) > 0),
+        "safe_drawn_right": bool(toward * worst(decode(cf_rob)) > 0),
+        "sparse_drawn_right": bool(toward * logit(decode(cf_sparse)) > 0),
+    }
+
+
 SPARSE_MAX = 3      # "fewest changes" looks for a change to at most this many values
 SPARSE_POOL = 8     # among this many of the most promising values
 CHANGED = 0.05      # a value counts as changed past this (standardized), as on the cards
@@ -551,6 +578,8 @@ def _panel(setup, which, x0, fixed=None, limits=None):
         "safe_on_map": _on_map(lens, cf_rob - x0),
         # The three changes listed on the map page: chance after, and values changed.
         "sparse_ok": bool(sparse_ok),
+        **_drawn_right(setup, which, lambda x: lens.invert(lens.embed(x))[0],
+                       x0, cf_std, cf_rob, cf_sparse, theta_w),
         "sparse_safe": bool(rob_sparse >= MARGIN - 1e-3),
         "p_bad_quick": _sigmoid(logit_std),
         "p_bad_sparse": _sigmoid(logit_sparse),
